@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 import html
+import hashlib
 import json
 import sys
 import zipfile
 from datetime import date, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 import plotly.express as px
@@ -27,6 +29,19 @@ from config import (
     ensure_directories,
 )
 from calendar_sync import sync_google_calendar_service_account
+from bible_lookup import (
+    BibleAPIError,
+    BibleReference,
+    BibleVerse,
+    LocalBible,
+    decode_text_file,
+    extract_bible_references,
+    fetch_bible_verse,
+    fetch_local_bible_verse,
+    list_korean_bibles,
+    parse_local_bible,
+    report_fums_view,
+)
 from google_sheets_sync import sync_google_sheets
 from google_review_board import GoogleReviewBoardStore, ReviewBoardConnectionError, filter_review_items
 from db import (
@@ -494,6 +509,23 @@ def service_account_secret(name: str) -> tuple[dict[str, object] | None, str]:
     return parsed, ""
 
 
+def text_secret(name: str) -> str:
+    try:
+        return str(st.secrets[name]).strip()
+    except (FileNotFoundError, KeyError, TypeError):
+        return ""
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_korean_bibles(api_key: str) -> list[dict[str, str]]:
+    return list_korean_bibles(api_key)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_local_bible(data: bytes) -> LocalBible:
+    return parse_local_bible(data)
+
+
 def review_board_store() -> tuple[GoogleReviewBoardStore | None, str]:
     service_account_info, secret_error = service_account_secret("GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT")
     if service_account_info is None:
@@ -756,7 +788,7 @@ def sidebar() -> str:
         st.markdown(f"## ⛪ {APP_TITLE}")
         st.caption("예배 운영 · 지식관리")
         st.markdown("---")
-        menu_items = ["대시보드", "팀 확인", "행사", "매뉴얼", "예배 인원 현황", "교회력", "전체 검색", "결정·운영로그", "보관함", "데이터·백업"]
+        menu_items = ["대시보드", "팀 확인", "행사", "매뉴얼", "예배 인원 현황", "교회력", "성경 검색", "전체 검색", "결정·운영로그", "보관함", "데이터·백업"]
         menu_labels = {
             "대시보드": "⌂  대시보드",
             "팀 확인": "✓  팀 확인",
@@ -765,6 +797,7 @@ def sidebar() -> str:
             "매뉴얼": "▤  매뉴얼",
             "결정·운영로그": "✎  결정·운영 기록",
             "예배 인원 현황": "▥  예배 인원 현황",
+            "성경 검색": "▦  성경 검색",
             "전체 검색": "⌕  전체 검색",
             "보관함": "□  보관함",
             "데이터·백업": "⚙  데이터·백업",
@@ -1690,6 +1723,218 @@ def attendance_page() -> None:
     st.caption("통계의 변화는 운영 이벤트와 함께 참고할 수 있지만, 자동으로 인과관계를 주장하지 않습니다.")
 
 
+def bible_page() -> None:
+    hero("성경 검색", "짧은 구절 표기나 설교 문자를 붙여넣으면 성경 구절을 찾아 정리합니다.")
+
+    api_key = text_secret("API_BIBLE_KEY")
+    preferred_bible_id = text_secret("API_BIBLE_ID")
+    bible_id = preferred_bible_id
+    bible_label = preferred_bible_id or "번역본 미선택"
+    bible_list_error = ""
+    local_bible: LocalBible | None = None
+    local_source = st.file_uploader(
+        "성경 전체 본문 TXT",
+        type=["txt"],
+        help="‘창1:1 본문’ 형식의 성경 전체 파일입니다. 10MB 이하 파일을 현재 화면에서만 읽고 저장하지 않습니다.",
+        key="bible_corpus_upload",
+    )
+    if local_source is not None:
+        local_bytes = local_source.getvalue()
+        if len(local_bytes) > 10 * 1024 * 1024:
+            st.error("성경 전체 본문 TXT는 10MB 이하만 사용할 수 있습니다.")
+        else:
+            local_hash = hashlib.sha256(local_bytes).hexdigest()
+            try:
+                local_bible = _cached_local_bible(local_bytes)
+                bible_label = Path(local_source.name).stem
+                if st.session_state.get("_bible_corpus_hash") != local_hash:
+                    st.session_state["_bible_corpus_hash"] = local_hash
+                    st.session_state.pop("bible_lookup_result", None)
+                st.success(
+                    f"{bible_label} · {local_bible.book_count}권 {len(local_bible.verses):,}절을 검색 자료로 연결했습니다."
+                )
+                if local_bible.invalid_line_count:
+                    st.warning(f"형식을 읽지 못한 행 {local_bible.invalid_line_count}개는 검색에서 제외했습니다.")
+                st.caption("업로드한 번역문을 공개 화면에서 사용할 권한이 있는지 확인해 주세요.")
+            except ValueError as exc:
+                st.error(str(exc))
+
+    if local_bible is not None:
+        st.caption("이번 검색은 업로드한 성경 전체 본문 TXT를 우선 사용합니다.")
+    elif api_key:
+        try:
+            korean_bibles = _cached_korean_bibles(api_key)
+        except BibleAPIError as exc:
+            korean_bibles = []
+            bible_list_error = str(exc)
+        if korean_bibles:
+            bible_by_id = {item["id"]: item for item in korean_bibles}
+            bible_ids = list(bible_by_id)
+            preferred_index = bible_ids.index(preferred_bible_id) if preferred_bible_id in bible_ids else 0
+            bible_id = st.selectbox(
+                "성경 번역본",
+                bible_ids,
+                index=preferred_index,
+                format_func=lambda value: (
+                    f'{bible_by_id[value]["name"]}'
+                    + (f' ({bible_by_id[value]["abbreviation"]})' if bible_by_id[value]["abbreviation"] else "")
+                ),
+                key="bible_translation",
+            )
+            selected_bible = bible_by_id[bible_id]
+            bible_label = selected_bible["name"]
+            if selected_bible["description"]:
+                st.caption(selected_bible["description"])
+        elif bible_id:
+            st.caption(f"설정된 성경 번역본으로 검색합니다: {bible_id}")
+        else:
+            st.warning("현재 API 계정에서 사용할 수 있는 한국어 성경 번역본을 찾지 못했습니다.")
+            if bible_list_error:
+                st.caption(bible_list_error)
+    else:
+        st.caption("구절 표기는 바로 인식됩니다. 본문 표시는 관리자가 성경 API를 연결한 뒤 사용할 수 있습니다.")
+
+    uploaded_text = st.file_uploader(
+        "찾을 구절 목록 TXT (선택)",
+        type=["txt"],
+        help="설교 문자나 찾을 구절 목록입니다. UTF-8 또는 윈도우 한글 메모장 형식을 지원하며 저장하지 않습니다.",
+        key="bible_text_upload",
+    )
+    if uploaded_text is not None:
+        uploaded_bytes = uploaded_text.getvalue()
+        if len(uploaded_bytes) > 2 * 1024 * 1024:
+            st.error("TXT 파일은 2MB 이하만 사용할 수 있습니다.")
+        else:
+            upload_hash = hashlib.sha256(uploaded_bytes).hexdigest()
+            if st.session_state.get("_bible_upload_hash") != upload_hash:
+                try:
+                    st.session_state["bible_source_text"] = decode_text_file(uploaded_bytes)
+                    st.session_state["_bible_upload_hash"] = upload_hash
+                    st.session_state.pop("bible_lookup_result", None)
+                    st.toast(f"{uploaded_text.name} 내용을 불러왔습니다.")
+                except ValueError as exc:
+                    st.error(str(exc))
+
+    source_text = st.text_area(
+        "성경 구절 또는 설교 문자",
+        height=210,
+        placeholder=(
+            "짧게 검색: 창:1:1 또는 행 7:2~3\n\n"
+            "또는 받은 문자를 그대로 붙여넣으세요.\n"
+            "[설교 인용 구절]\n"
+            "열왕기상 19장 4절\n마태복음 6장 1절\n시편 103편 14절"
+        ),
+        key="bible_source_text",
+        help="창:1:1, 창세기 1장 1절, 행 7:2~3, 사도행전 7장 2~3절 형식을 모두 인식합니다.",
+    )
+    submitted = st.button("구절 찾기", type="primary", width="stretch")
+
+    if submitted:
+        all_references = extract_bible_references(source_text, limit=101)
+        references = all_references[:100]
+        omitted_count = max(0, len(all_references) - len(references))
+        verses: list[BibleVerse] = []
+        errors: list[tuple[BibleReference, str]] = []
+        if references and local_bible is not None:
+            with st.spinner(f"업로드한 성경에서 {len(references)}개 구절을 찾는 중입니다…"):
+                for reference in references:
+                    try:
+                        verses.append(fetch_local_bible_verse(local_bible, reference, bible_label))
+                    except BibleAPIError as exc:
+                        errors.append((reference, str(exc)))
+        elif references and api_key and bible_id:
+            with st.spinner(f"{len(references)}개 구절의 본문을 찾는 중입니다…"):
+                for reference in references:
+                    try:
+                        verses.append(fetch_bible_verse(api_key, bible_id, reference))
+                    except BibleAPIError as exc:
+                        errors.append((reference, str(exc)))
+                if verses:
+                    device_id = st.session_state.setdefault("_bible_device_id", uuid4().hex)
+                    session_id = st.session_state.setdefault("_bible_session_id", uuid4().hex)
+                    report_fums_view((verse.fums_token for verse in verses), device_id, session_id)
+
+        st.session_state["bible_lookup_result"] = {
+            "source": source_text,
+            "references": references,
+            "verses": verses,
+            "errors": errors,
+            "bible_label": bible_label,
+            "omitted_count": omitted_count,
+        }
+        if verses:
+            copy_lines = [f"[성경 본문 · {bible_label}]"]
+            for verse in verses:
+                copy_lines.extend(["", verse.reference.display, verse.content])
+            st.session_state["bible_copy_output"] = "\n".join(copy_lines).strip()
+
+    result = st.session_state.get("bible_lookup_result")
+    if not result:
+        with st.expander("지원하는 입력 형식"):
+            st.markdown("`창:1:1` · `창세기 1장 1절` · `행 7:2~3` · `사도행전 7장 2~3절` · 여러 구절이 들어간 설교 문자")
+        return
+    if source_text != result["source"]:
+        st.info("입력 내용이 바뀌었습니다. ‘구절 찾기’를 눌러 새로 확인하세요.")
+        return
+
+    references = result["references"]
+    verses = result["verses"]
+    errors = result["errors"]
+    if not references:
+        st.warning("인식할 수 있는 성경 구절 표기가 없습니다. 예: 창:1:1 또는 창세기 1장 1절")
+        return
+
+    compact_stats(
+        [("인식된 구절", f"{len(references)}개"), ("본문 확인", f"{len(verses)}개")],
+        columns=2,
+    )
+    if result.get("omitted_count"):
+        st.warning("한 번에 최대 100개 구절까지 처리합니다. 100개 이후 구절은 파일을 나누어 다시 확인해 주세요.")
+    st.subheader("찾은 성경 본문")
+    if local_bible is None and not api_key:
+        st.info("구절 표기는 정상적으로 찾았습니다. 위에서 성경 전체 본문 TXT를 올리거나 관리자가 성경 API를 연결하면 본문까지 표시됩니다.")
+    elif local_bible is None and not bible_id:
+        st.info("구절 표기는 정상적으로 찾았습니다. 사용할 한국어 성경 번역본을 연결해 주세요.")
+
+    verse_by_id = {verse.reference.verse_id: verse for verse in verses}
+    error_by_id = {reference.verse_id: message for reference, message in errors}
+    for reference in references:
+        with st.container(border=True):
+            st.markdown(f"**{reference.display}**")
+            verse = verse_by_id.get(reference.verse_id)
+            if verse:
+                st.write(verse.content)
+            elif reference.verse_id in error_by_id:
+                st.warning(error_by_id[reference.verse_id])
+            else:
+                st.caption("본문 연결 대기")
+
+    if verses:
+        st.subheader("한 번에 복사")
+        st.text_area(
+            "정리된 성경 본문",
+            height=min(420, 120 + len(verses) * 62),
+            key="bible_copy_output",
+            help="내용을 길게 눌러 전체 선택 후 복사할 수 있습니다.",
+        )
+        st.download_button(
+            "정리본 내려받기",
+            st.session_state["bible_copy_output"].encode("utf-8-sig"),
+            file_name="성경_본문_정리.txt",
+            mime="text/plain",
+            width="stretch",
+        )
+        copyrights = list(dict.fromkeys(verse.copyright for verse in verses if verse.copyright))
+        if copyrights:
+            with st.expander("번역본 저작권 안내"):
+                for copyright_text in copyrights:
+                    st.caption(copyright_text)
+
+    with st.expander("지원하는 입력 형식"):
+        st.markdown("`창:1:1` · `창세기 1장 1절` · `행 7:2~3` · `사도행전 7장 2~3절` · 여러 구절이 들어간 설교 문자")
+        st.caption("입력한 문자와 TXT 파일은 저장하거나 수정하지 않으며, 인식한 구절만 화면에 정리합니다. 한 번에 최대 100개 구절을 확인합니다.")
+
+
 def search_page() -> None:
     hero("전체 검색", "준비업무와 매뉴얼 내용을 검색하고 상세 화면으로 바로 이동합니다.")
     term = st.text_input("검색어", value=st.session_state.get("search_term", ""), placeholder="예: 세례, 방석, 마이크")
@@ -1928,6 +2173,7 @@ def main() -> None:
         "매뉴얼": manuals_page,
         "결정·운영로그": logs_page,
         "예배 인원 현황": attendance_page,
+        "성경 검색": bible_page,
         "전체 검색": search_page,
         "보관함": archive_page,
         "데이터·백업": data_page,
