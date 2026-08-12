@@ -17,11 +17,11 @@ import streamlit as st
 APP_DIR = Path(__file__).resolve().parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
+BIBLE_TEXT_PATH = APP_DIR / "bible_text.txt"
 
 from config import (
     APP_TITLE,
     APP_VERSION,
-    BIBLE_TEXT_PATH,
     DB_PATH,
     GOOGLE_SHEETS_CACHE_DIR,
     IMPORT_REPORT_PATH,
