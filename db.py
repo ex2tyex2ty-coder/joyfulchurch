@@ -290,6 +290,32 @@ CREATE TABLE IF NOT EXISTS assignments (
     UNIQUE(service_id, role, member_id, raw_name)
 );
 
+CREATE TABLE IF NOT EXISTS review_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'REVIEW_REQUIRED',
+    created_by TEXT NOT NULL,
+    updated_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TEXT,
+    archived_at TEXT,
+    CHECK(status IN ('REVIEW_REQUIRED','IN_PROGRESS','CONFIRMED'))
+);
+
+CREATE TABLE IF NOT EXISTS review_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_item_id INTEGER NOT NULL REFERENCES review_items(id) ON DELETE CASCADE,
+    parent_comment_id INTEGER REFERENCES review_comments(id),
+    author TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status_change TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at TEXT,
+    CHECK(status_change IS NULL OR status_change IN ('REVIEW_REQUIRED','IN_PROGRESS','CONFIRMED'))
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL,
@@ -307,6 +333,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_event_status ON tasks(event_id, status);
 CREATE INDEX IF NOT EXISTS idx_attendance_date_type ON attendance(service_date, service_type);
 CREATE INDEX IF NOT EXISTS idx_manuals_status ON manuals(status);
 CREATE INDEX IF NOT EXISTS idx_logs_event ON operation_logs(event_id);
+CREATE INDEX IF NOT EXISTS idx_review_items_status ON review_items(status, archived_at);
+CREATE INDEX IF NOT EXISTS idx_review_comments_item ON review_comments(review_item_id, created_at);
 """
 
 
@@ -327,7 +355,7 @@ def init_db(path: Path | str = DB_PATH) -> None:
     with closing(connect(path)) as conn:
         conn.executescript(SCHEMA)
         conn.execute(
-            "INSERT INTO app_meta(key, value) VALUES('schema_version', '1') "
+            "INSERT INTO app_meta(key, value) VALUES('schema_version', '2') "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP"
         )
         conn.commit()
@@ -368,6 +396,70 @@ def set_app_meta(key: str, value: str, path: Path | str = DB_PATH) -> None:
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP",
             (key, value),
         )
+
+
+def create_review_item(
+    title: str,
+    description: str,
+    created_by: str,
+    path: Path | str = DB_PATH,
+) -> int:
+    title = title.strip()
+    created_by = created_by.strip()
+    if not title or not created_by:
+        raise ValueError("제목과 작성자를 입력하세요.")
+    with transaction(path) as conn:
+        cur = conn.execute(
+            "INSERT INTO review_items(title,description,created_by,updated_by) VALUES(?,?,?,?)",
+            (title[:200], description.strip()[:4000], created_by[:80], created_by[:80]),
+        )
+        item_id = int(cur.lastrowid)
+        audit(conn, "review_items", item_id, "CREATE", after={"title": title, "created_by": created_by})
+        return item_id
+
+
+def add_review_comment(
+    review_item_id: int,
+    author: str,
+    body: str,
+    status_change: str | None = None,
+    parent_comment_id: int | None = None,
+    path: Path | str = DB_PATH,
+) -> int:
+    author = author.strip()
+    body = body.strip()
+    valid_statuses = {"REVIEW_REQUIRED", "IN_PROGRESS", "CONFIRMED"}
+    if not author or not body:
+        raise ValueError("작성자와 댓글을 입력하세요.")
+    if status_change is not None and status_change not in valid_statuses:
+        raise ValueError("올바르지 않은 상태입니다.")
+    with transaction(path) as conn:
+        item = conn.execute(
+            "SELECT * FROM review_items WHERE id=? AND archived_at IS NULL", (review_item_id,)
+        ).fetchone()
+        if not item:
+            raise ValueError("확인항목을 찾을 수 없습니다.")
+        cur = conn.execute(
+            "INSERT INTO review_comments(review_item_id,parent_comment_id,author,body,status_change) VALUES(?,?,?,?,?)",
+            (review_item_id, parent_comment_id, author[:80], body[:4000], status_change),
+        )
+        if status_change:
+            conn.execute(
+                "UPDATE review_items SET status=?,updated_by=?,updated_at=CURRENT_TIMESTAMP,"
+                "confirmed_at=CASE WHEN ?='CONFIRMED' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?",
+                (status_change, author[:80], status_change, review_item_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE review_items SET updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (author[:80], review_item_id),
+            )
+        audit(
+            conn, "review_items", review_item_id, "COMMENT",
+            before={"status": item["status"]},
+            after={"author": author, "status": status_change or item["status"]},
+        )
+        return int(cur.lastrowid)
 
 
 def audit(
@@ -767,9 +859,9 @@ def export_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> 
     table_names = [
         "events", "tasks", "event_reviews", "event_templates", "task_templates", "manuals", "manual_revisions",
         "decisions", "operation_logs", "references_data", "church_calendar_events", "attendance", "services", "members", "assignments",
-        "source_files", "unresolved_imports", "audit_logs",
+        "review_items", "review_comments", "source_files", "unresolved_imports", "audit_logs",
     ]
-    payload: dict[str, Any] = {"exported_at": datetime.now().isoformat(), "schema_version": 1, "tables": {}}
+    payload: dict[str, Any] = {"exported_at": datetime.now().isoformat(), "schema_version": 2, "tables": {}}
     csv_payloads: dict[str, str] = {}
     with closing(connect(path)) as conn:
         for table in table_names:
