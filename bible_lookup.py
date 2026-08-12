@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from typing import Iterable
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
-
-
-API_BASE_URL = "https://rest.api.bible/v1"
-FUMS_URL = "https://fums.api.bible/f3"
 
 
 @dataclass(frozen=True)
@@ -46,7 +37,7 @@ class LocalBible:
     invalid_line_count: int
 
 
-class BibleAPIError(RuntimeError):
+class BibleLookupError(RuntimeError):
     pass
 
 
@@ -65,7 +56,7 @@ def decode_text_file(data: bytes) -> str:
     raise ValueError("TXT 파일의 문자 형식을 읽지 못했습니다. UTF-8 또는 한글 메모장 형식으로 저장해 주세요.")
 
 
-# Canonical Korean names, API.Bible/USFM book ids, and familiar Korean abbreviations.
+# Canonical Korean names, internal book ids, and familiar Korean abbreviations.
 BOOKS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("창세기", "GEN", ("창세기", "창")),
     ("출애굽기", "EXO", ("출애굽기", "출")),
@@ -222,7 +213,7 @@ def parse_local_bible(data: bytes, minimum_verses: int = 1_000) -> LocalBible:
 def fetch_local_bible_verse(local_bible: LocalBible, reference: BibleReference, source_label: str) -> BibleVerse:
     content = local_bible.verses.get(reference.verse_id, "")
     if not content:
-        raise BibleAPIError("업로드한 성경 TXT에서 이 구절을 찾지 못했습니다.")
+        raise BibleLookupError("업로드한 성경 TXT에서 이 구절을 찾지 못했습니다.")
     return BibleVerse(
         reference=reference,
         content=content,
@@ -230,90 +221,3 @@ def fetch_local_bible_verse(local_bible: LocalBible, reference: BibleReference, 
         copyright=f"사용자 제공 파일 · {source_label}",
         fums_token="",
     )
-
-
-def _get_json(path: str, api_key: str, params: dict[str, str] | None = None) -> dict[str, object]:
-    query = f"?{urlencode(params)}" if params else ""
-    request = Request(
-        f"{API_BASE_URL}{path}{query}",
-        headers={"api-key": api_key, "Accept": "application/json", "User-Agent": "JoyfulWorshipOps/1.0"},
-    )
-    try:
-        with urlopen(request, timeout=12) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = ""
-        try:
-            payload = json.loads(exc.read().decode("utf-8"))
-            detail = str(payload.get("message") or payload.get("error") or "")
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            pass
-        if exc.code in {401, 403}:
-            raise BibleAPIError("성경 API 키 또는 선택한 번역본의 이용 권한을 확인하세요.") from exc
-        if exc.code == 404:
-            raise BibleAPIError("선택한 번역본에서 이 구절을 찾지 못했습니다.") from exc
-        raise BibleAPIError(f"성경 API 요청을 완료하지 못했습니다 ({exc.code}). {detail}".strip()) from exc
-    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise BibleAPIError("성경 API에 연결하지 못했습니다. 잠시 후 다시 시도하세요.") from exc
-
-
-def list_korean_bibles(api_key: str) -> list[dict[str, str]]:
-    payload = _get_json("/bibles", api_key, {"language": "kor", "include-full-details": "true"})
-    bibles: list[dict[str, str]] = []
-    for item in payload.get("data", []):
-        if not isinstance(item, dict) or not item.get("id"):
-            continue
-        bibles.append(
-            {
-                "id": str(item["id"]),
-                "name": str(item.get("nameLocal") or item.get("name") or item["id"]),
-                "abbreviation": str(item.get("abbreviationLocal") or item.get("abbreviation") or ""),
-                "description": str(item.get("descriptionLocal") or item.get("description") or ""),
-            }
-        )
-    return sorted(bibles, key=lambda item: (item["name"], item["id"]))
-
-
-def fetch_bible_verse(api_key: str, bible_id: str, reference: BibleReference) -> BibleVerse:
-    payload = _get_json(
-        f"/bibles/{quote(bible_id, safe='')}/verses/{quote(reference.verse_id, safe='.')}",
-        api_key,
-        {
-            "content-type": "text",
-            "include-notes": "false",
-            "include-titles": "false",
-            "include-chapter-numbers": "false",
-            "include-verse-numbers": "false",
-            "include-verse-spans": "false",
-            "fums-version": "3",
-        },
-    )
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        raise BibleAPIError("성경 API 응답에 본문이 없습니다.")
-    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
-    content = re.sub(r"\s+", " ", str(data.get("content") or "")).strip()
-    if not content:
-        raise BibleAPIError("선택한 번역본에서 이 구절의 본문을 찾지 못했습니다.")
-    return BibleVerse(
-        reference=reference,
-        content=content,
-        api_reference=str(data.get("reference") or reference.display),
-        copyright=str(data.get("copyright") or ""),
-        fums_token=str(meta.get("fumsToken") or ""),
-    )
-
-
-def report_fums_view(tokens: Iterable[str], device_id: str, session_id: str) -> None:
-    clean_tokens = [token for token in tokens if token]
-    if not clean_tokens:
-        return
-    params: list[tuple[str, str]] = [("dId", device_id), ("sId", session_id)]
-    params.extend(("t", token) for token in clean_tokens)
-    request = Request(f"{FUMS_URL}?{urlencode(params)}", headers={"User-Agent": "JoyfulWorshipOps/1.0"})
-    try:
-        with urlopen(request, timeout=6):
-            pass
-    except (HTTPError, URLError, TimeoutError):
-        # Tracking must not hide a verse already retrieved successfully.
-        return
