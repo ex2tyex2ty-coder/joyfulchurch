@@ -1,0 +1,334 @@
+{
+  "started_at": "2026-08-12T09:50:47",
+  "source_directory": "data\\google_sheets",
+  "source_files": [
+    {
+      "file": "2025 예배팀 매뉴얼.xlsx",
+      "role": "MANUALS",
+      "size": 3276119,
+      "sheets": [
+        {
+          "name": "항시 체크 비품",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 13,
+          "meaningful_last_column": 3,
+          "non_empty_cells": 35
+        },
+        {
+          "name": "특별예배 관련 내용",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 10,
+          "meaningful_last_column": 8,
+          "non_empty_cells": 68
+        },
+        {
+          "name": "나스",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 2,
+          "meaningful_last_column": 3,
+          "non_empty_cells": 5
+        },
+        {
+          "name": "성찬식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 18,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 42
+        },
+        {
+          "name": "성인세례",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 25,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 48
+        },
+        {
+          "name": "유아세례",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 27,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 55
+        },
+        {
+          "name": "에센스수료식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 11,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 19
+        },
+        {
+          "name": "성금요일 예배",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 4,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 9
+        },
+        {
+          "name": "선교 파송보고예배",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 12,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 34
+        },
+        {
+          "name": "아카데미수료식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 10,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 18
+        },
+        {
+          "name": "드림장학금",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 12,
+          "meaningful_last_column": 7,
+          "non_empty_cells": 23
+        },
+        {
+          "name": "집사임명식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 16,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 24
+        },
+        {
+          "name": "리더십임명식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 11,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 22
+        },
+        {
+          "name": "팀장임명식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 9,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 20
+        },
+        {
+          "name": "스탭임명식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 10,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 20
+        },
+        {
+          "name": "수련회",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 6,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 12
+        },
+        {
+          "name": "생애첫예배",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 5,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 11
+        },
+        {
+          "name": "교역자 부임식",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 4,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 8
+        },
+        {
+          "name": "시트17",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 6,
+          "meaningful_last_column": 2,
+          "non_empty_cells": 6
+        },
+        {
+          "name": "시트18",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 12,
+          "meaningful_last_column": 4,
+          "non_empty_cells": 48
+        }
+      ]
+    },
+    {
+      "file": "2025 예배팀 엔지니어 라인업.xlsx",
+      "role": "LINEUP_ATTENDANCE",
+      "size": 26220530,
+      "sheets": [
+        {
+          "name": "2025 예배인원",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 139,
+          "meaningful_last_column": 6,
+          "non_empty_cells": 681
+        },
+        {
+          "name": "2026 예배인원",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 75,
+          "meaningful_last_column": 7,
+          "non_empty_cells": 369
+        },
+        {
+          "name": "시트9",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 2,
+          "meaningful_last_column": 2,
+          "non_empty_cells": 4
+        },
+        {
+          "name": "간사 회의록",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 5,
+          "meaningful_last_column": 2,
+          "non_empty_cells": 9
+        },
+        {
+          "name": "2025_1월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 177
+        },
+        {
+          "name": "2025_2월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 188
+        },
+        {
+          "name": "2025_3월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 12,
+          "non_empty_cells": 185
+        },
+        {
+          "name": "2025_4월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 90,
+          "meaningful_last_column": 10,
+          "non_empty_cells": 157
+        },
+        {
+          "name": "2025_5월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 137
+        },
+        {
+          "name": "2025_6월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 132
+        },
+        {
+          "name": "2025_7월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 91,
+          "meaningful_last_column": 10,
+          "non_empty_cells": 168
+        },
+        {
+          "name": "2025_8월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 12,
+          "non_empty_cells": 126
+        },
+        {
+          "name": "2025_9월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 74,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 120
+        },
+        {
+          "name": "2025_11월",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 75,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 131
+        },
+        {
+          "name": "2025_11월의 사본",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 75,
+          "meaningful_last_column": 11,
+          "non_empty_cells": 131
+        },
+        {
+          "name": "주일 세팅 타임테이블",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 37,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 69
+        },
+        {
+          "name": "금요집회 세팅 타임테이블",
+          "reported_max_row": null,
+          "reported_max_column": null,
+          "meaningful_last_row": 29,
+          "meaningful_last_column": 5,
+          "non_empty_cells": 53
+        }
+      ]
+    }
+  ],
+  "imported": {
+    "manuals": 21,
+    "event_templates": 0,
+    "task_templates": 173,
+    "references": 19,
+    "attendance": 189,
+    "services": 88,
+    "assignments": 389,
+    "members": 0,
+    "events": 0
+  },
+  "skipped": [],
+  "unresolved": 26,
+  "data_quality": {
+    "Imported": 176,
+    "Needs Review": 13
+  },
+  "finished_at": "2026-08-12T09:50:48"
+}
