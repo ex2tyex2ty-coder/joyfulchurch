@@ -128,6 +128,19 @@ a { color:#AD4700; }
 .ops-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; padding:.75rem .85rem; }
 .ops-stat .label { color:#5B493D; font-size:.82rem; }
 .ops-stat .value { color:#2C1F16; font-size:1.35rem; font-weight:800; margin-top:.2rem; }
+.review-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.45rem; margin:.55rem 0 .9rem; }
+.review-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:12px; min-height:76px; padding:.55rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.review-stat .label { color:#5B493D; font-size:.78rem; line-height:1.2; white-space:nowrap; }
+.review-stat .value { color:#2C1F16; font-size:1.3rem; line-height:1.15; font-weight:800; margin-top:.25rem; }
+.compact-stat-grid { display:grid; grid-template-columns:repeat(var(--stat-cols,4),minmax(0,1fr)); gap:.42rem; margin:.55rem 0 .9rem; }
+.compact-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:12px; min-height:74px; padding:.55rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.compact-stat .label { color:#5B493D; font-size:.77rem; line-height:1.2; }
+.compact-stat .value { color:#2C1F16; font-size:1.2rem; line-height:1.15; font-weight:800; margin-top:.25rem; overflow-wrap:anywhere; }
+.ops-list { display:grid; gap:.5rem; margin:.45rem 0 .75rem; }
+.ops-list-item { background:#FFFFFF; border:1px solid #E4CCB6; border-left:4px solid #FF8207; border-radius:12px; padding:.7rem .8rem; }
+.ops-list-item .meta { color:#735F50; font-size:.8rem; margin-bottom:.18rem; }
+.ops-list-item .title { color:#2C1F16; font-size:.98rem; font-weight:800; }
+.ops-list-item .note { color:#665448; font-size:.82rem; margin-top:.2rem; }
 .ops-attendance { background:#FFFFFF; border:1px solid #E4CCB6; border-left:5px solid #FF8207; border-radius:16px; padding:1rem 1.1rem; margin:.4rem 0 1rem; }
 .ops-attendance .date { color:#735F50; font-size:.88rem; }
 .ops-attendance .total { color:#2C1F16; font-size:2.15rem; font-weight:850; line-height:1.15; margin:.35rem 0 .55rem; }
@@ -241,12 +254,31 @@ code, pre { background:#FFF3E7 !important; color:#30251D !important; }
   }
 }
 @media (max-width: 768px) {
+  [data-testid="stSidebar"] {
+    width:min(15.25rem, 63vw) !important;
+    min-width:min(15.25rem, 63vw) !important;
+    max-width:min(15.25rem, 63vw) !important;
+  }
+  [data-testid="stSidebar"] > div:first-child,
+  [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+    width:100% !important;
+  }
+  [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    padding:1rem .8rem !important;
+  }
+  [data-testid="stSidebar"] h2 {
+    font-size:.96rem !important;
+    white-space:nowrap;
+  }
+  [data-testid="stSidebar"] [role="radiogroup"] p {
+    font-size:.9rem !important;
+  }
   .ops-hero { padding:1rem; border-radius:14px; }
   .ops-hero h1 { font-size:1.4rem; }
   .ops-card { min-height:86px; padding:.75rem; }
   .ops-card .value { font-size:1.25rem; }
   [data-testid="stHorizontalBlock"] { gap:.35rem; }
-  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:44px !important; width:100%; padding:.6rem .45rem !important; display:flex; align-items:center; }
+  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:44px !important; width:100%; padding:.45rem .2rem !important; display:flex; align-items:center; }
   [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
   [data-baseweb="select"] > div, [data-testid="stDateInput"] input,
   [data-testid="stNumberInput"] input { min-height:44px !important; font-size:16px !important; }
@@ -258,6 +290,17 @@ code, pre { background:#FFF3E7 !important; color:#30251D !important; }
   .ops-badge { font-size:.82rem !important; }
   .ops-card .label, .ops-card .note { font-size:.875rem !important; }
   .ops-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .review-stat-grid { grid-template-columns:repeat(4,minmax(0,1fr)); gap:.3rem; }
+  .review-stat { min-height:68px; border-radius:10px; padding:.45rem .12rem; }
+  .review-stat .label { font-size:.72rem; }
+  .review-stat .value { font-size:1.15rem; }
+  .compact-stat-grid { gap:.3rem; }
+  .compact-stat { min-height:66px; border-radius:10px; padding:.4rem .12rem; }
+  .compact-stat .label { font-size:.7rem; }
+  .compact-stat .value { font-size:1.03rem; }
+  .st-key-dashboard_quick_menu [data-testid="stHorizontalBlock"] { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.4rem !important; }
+  .st-key-dashboard_quick_menu [data-testid="column"] { width:100% !important; min-width:0 !important; flex:unset !important; }
+  [data-testid="stMainBlockContainer"] { padding-left:1rem !important; padding-right:1rem !important; }
   .ops-stat .value { font-size:1.2rem; }
   .stTabs [data-baseweb="tab-list"] { overflow-x:auto; scrollbar-width:thin; }
   [data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"] { overflow-wrap:anywhere; }
@@ -301,6 +344,21 @@ def show_flash() -> None:
 def hero(title: str, subtitle: str) -> None:
     st.markdown(
         f'<div class="ops-hero"><h1>{html.escape(title)}</h1><p>{html.escape(subtitle)}</p></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def compact_stats(metrics: list[tuple[str, object]], columns: int = 4) -> None:
+    safe_columns = max(1, min(int(columns), 4))
+    cards = "".join(
+        '<div class="compact-stat">'
+        f'<div class="label">{html.escape(str(label))}</div>'
+        f'<div class="value">{html.escape(str(value))}</div>'
+        "</div>"
+        for label, value in metrics
+    )
+    st.markdown(
+        f'<div class="compact-stat-grid" style="--stat-cols:{safe_columns}">{cards}</div>',
         unsafe_allow_html=True,
     )
 
@@ -373,6 +431,8 @@ def status_ko(value: str) -> str:
         "PLANNING": "준비중", "ACTIVE": "진행중", "COMPLETED": "종료", "CANCELLED": "취소",
         "TODO": "미완료", "IN_PROGRESS": "진행중", "DONE": "완료", "BLOCKED": "보류",
         "CURRENT": "현재 기준", "ARCHIVED": "보관됨", "SUPERSEDED": "이전 기준",
+        "APPROVED": "승인", "PENDING": "검토중", "REJECTED": "보류", "CHANGED": "변경됨",
+        "OPEN": "확인 필요", "RESOLVED": "처리 완료",
     }.get(value, value)
 
 
@@ -400,6 +460,7 @@ def quality_ko(value: str) -> str:
         "Imported": "원본 반영",
         "Needs Review": "확인 필요",
         "Unknown": "미확인",
+        "Stale": "원본에서 제외",
     }.get(value, value)
 
 
@@ -474,15 +535,21 @@ def shared_review_board() -> None:
         st.rerun()
     st.caption("게시글·댓글·진행 상태는 게시판 전용 Google Sheets에 영구 저장됩니다.")
 
-    count_cols = st.columns(4)
     metrics = [
         ("확인 필요", counts["REVIEW_REQUIRED"]),
         ("진행중", counts["IN_PROGRESS"]),
         ("기한 지남", overdue_count),
         ("확인 완료", counts["CONFIRMED"]),
     ]
-    for column, (label, value) in zip(count_cols, metrics):
-        column.metric(label, f"{value}건")
+    st.markdown(
+        '<div class="review-stat-grid">'
+        + "".join(
+            f'<div class="review-stat"><div class="label">{label}</div><div class="value">{value}건</div></div>'
+            for label, value in metrics
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
     status_options = {
         "미완료 전체": "OPEN",
@@ -758,15 +825,11 @@ def review_board_summary() -> None:
         1 for item in items
         if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < today_text
     )
-    summary_html = '<div class="ops-stat-grid">' + "".join(
-        f'<div class="ops-stat"><div class="label">{label}</div><div class="value">{value}건</div></div>'
-        for label, value in [
-            ("확인 필요", counts.get("REVIEW_REQUIRED", 0)),
-            ("진행중", counts.get("IN_PROGRESS", 0)),
-            ("기한 지남", overdue),
-        ]
-    ) + "</div>"
-    st.markdown(summary_html, unsafe_allow_html=True)
+    compact_stats([
+        ("확인 필요", f"{counts.get('REVIEW_REQUIRED', 0)}건"),
+        ("진행중", f"{counts.get('IN_PROGRESS', 0)}건"),
+        ("기한 지남", f"{overdue}건"),
+    ], columns=3)
 
     review_required_items = [item for item in items if item.get("status") == "REVIEW_REQUIRED"]
     review_required_items.sort(
@@ -807,7 +870,6 @@ def review_board_summary() -> None:
 
 def dashboard_page() -> None:
     dashboard_header()
-    google_sheets_sync_bar()
     today_date = date.today()
     today = today_date.isoformat()
     week_end = (today_date + timedelta(days=7)).isoformat()
@@ -877,27 +939,29 @@ def dashboard_page() -> None:
         ("상시 비품", "항시 체크 비품", "매뉴얼"),
         ("예배 인원", None, "예배 인원 현황"),
     ]
-    quick_cols = st.columns(4)
-    for column, (label, source_sheet, target_page) in zip(quick_cols, quick_actions):
-        if column.button(label, key=f"quick_{target_page}_{source_sheet or 'attendance'}", width="stretch"):
-            if source_sheet and quick_manual_ids.get(source_sheet):
-                navigate("매뉴얼", "selected_manual", quick_manual_ids[source_sheet])
-            else:
-                navigate(target_page)
+    with st.container(key="dashboard_quick_menu"):
+        quick_cols = st.columns(4)
+        for column, (label, source_sheet, target_page) in zip(quick_cols, quick_actions):
+            if column.button(label, key=f"quick_{target_page}_{source_sheet or 'attendance'}", width="stretch"):
+                if source_sheet and quick_manual_ids.get(source_sheet):
+                    navigate("매뉴얼", "selected_manual", quick_manual_ids[source_sheet])
+                else:
+                    navigate(target_page)
 
     st.divider()
     st.subheader("다가오는 교회력")
     if calendar_items:
-        for start in range(0, len(calendar_items), 3):
-            calendar_cols = st.columns(3)
-            for column, item in zip(calendar_cols, calendar_items[start:start + 3]):
-                with column.container(border=True):
-                    st.caption(f"{item['start_date']} · {dday(item['start_date'])}")
-                    st.markdown(f"**{item['title']}**")
-                    if item["location"]:
-                        st.caption(item["location"])
-                    if item["html_link"]:
-                        st.link_button("Google Calendar에서 보기", item["html_link"], width="stretch")
+        calendar_html = '<div class="ops-list">' + "".join(
+            '<div class="ops-list-item">'
+            f'<div class="meta">{html.escape(str(item["start_date"]))} · {html.escape(dday(item["start_date"]))}</div>'
+            f'<div class="title">{html.escape(str(item["title"]))}</div>'
+            + (f'<div class="note">{html.escape(str(item["location"]))}</div>' if item["location"] else "")
+            + "</div>"
+            for item in calendar_items[:3]
+        ) + "</div>"
+        st.markdown(calendar_html, unsafe_allow_html=True)
+        if st.button("교회력 전체 보기", key="dashboard_open_calendar", width="stretch"):
+            navigate("교회력")
     else:
         calendar_note, calendar_action = st.columns([.78, .22])
         calendar_note.info("연동된 교회력 일정이 없습니다. Google Calendar를 연결하면 가까운 일정부터 표시됩니다.")
@@ -932,24 +996,22 @@ def dashboard_page() -> None:
 
     st.divider()
     with st.expander("시스템 자동 점검 보기"):
-        alert_cols = st.columns(4)
         alerts = [
-            ("기한 지남", overdue_count, "danger"),
-            ("보류 업무", blocked_count, "warn"),
-            ("담당자 없는 중요업무", ownerless_high, "warn"),
-            ("재확인 운영로그", recheck_count, "warn"),
+            ("기한 지남", f"{overdue_count}건"),
+            ("보류 업무", f"{blocked_count}건"),
+            ("담당자 미정", f"{ownerless_high}건"),
+            ("재확인 로그", f"{recheck_count}건"),
         ]
-        for column, (label, count, tone) in zip(alert_cols, alerts):
-            column.markdown(
-                f'<div class="ops-card"><div class="label">{label}</div><div class="value">{count}건</div>'
-                f'<div class="note">{"확인 필요" if count else "이상 없음"}</div></div>',
-                unsafe_allow_html=True,
-            )
+        compact_stats(alerts, columns=4)
         if needs_review:
             note_col, button_col = st.columns([.82, .18])
             note_col.caption(f"원본 이관 데이터 중 사람이 확인할 항목이 {needs_review}건 있습니다. 데이터 관리 화면에서 검토합니다.")
             if button_col.button("데이터 확인", width="stretch"):
                 navigate("데이터·백업")
+
+    with st.expander("관리자 · 원본 데이터 업데이트", expanded=False):
+        st.caption("Google Sheets 원본을 갱신할 때만 사용합니다. 일반 사용자는 누르지 않아도 됩니다.")
+        google_sheets_sync_bar()
 
 
 def event_detail(event_id: int) -> None:
@@ -967,11 +1029,12 @@ def event_detail(event_id: int) -> None:
         f"{badge(quality_ko(event['data_quality']), 'warn' if event['data_quality']=='Needs Review' else '')}",
         unsafe_allow_html=True,
     )
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("준비도", f"{ready['percent']}%")
-    c2.metric("완료", f"{ready['done']}건")
-    c3.metric("미완료", f"{ready['open']}건")
-    c4.metric("중요 미완료", f"{ready['high_open']}건")
+    compact_stats([
+        ("준비도", f"{ready['percent']}%"),
+        ("완료", f"{ready['done']}건"),
+        ("미완료", f"{ready['open']}건"),
+        ("중요 미완료", f"{ready['high_open']}건"),
+    ], columns=4)
 
     checklist, overview, history, knowledge, review_tab = st.tabs(["체크리스트", "기본정보", "과거 참고", "관련 자료", "회고"])
     with overview:
@@ -1011,21 +1074,27 @@ def event_detail(event_id: int) -> None:
         if not task_rows:
             st.info("체크리스트가 없습니다. 아래에서 업무를 추가할 수 있습니다.")
         for task in task_rows:
-            cols = st.columns([.08, .58, .16, .18])
             completed = task["status"] == "DONE"
-            changed = cols[0].checkbox("완료", value=completed, label_visibility="collapsed", key=f"task_{task['id']}")
-            if changed != completed:
-                set_task_status(task["id"], "DONE" if changed else "TODO")
-                rerun("체크리스트 상태를 반영했습니다.")
-            with cols[1]:
-                title = f"~~{task['title']}~~" if completed else f"**{task['title']}**"
-                st.markdown(title)
+            with st.container(border=True):
+                changed = st.checkbox(
+                    task["title"],
+                    value=completed,
+                    key=f"task_{task['id']}",
+                    help="체크하면 완료 상태로 저장됩니다.",
+                )
+                if changed != completed:
+                    set_task_status(task["id"], "DONE" if changed else "TODO")
+                    rerun("체크리스트 상태를 반영했습니다.")
+                due_text = task["due_date"] or task["source_timing"] or "기한 미정"
+                st.markdown(
+                    f"{badge(priority_ko(task['priority']), 'danger' if task['priority'] == 'HIGH' else '')} "
+                    f"{badge(due_text, 'gray')}",
+                    unsafe_allow_html=True,
+                )
                 if task["description"]:
                     st.caption(task["description"][:300])
                 if task["depends_on"] and task["dependency_status"] != "DONE":
                     st.warning(f"선행 업무 미완료: {task['dependency_title']}", icon="⚠️")
-            cols[2].markdown(badge(priority_ko(task["priority"]), "danger" if task["priority"] == "HIGH" else ""), unsafe_allow_html=True)
-            cols[3].caption(task["due_date"] or task["source_timing"] or "기한 미정")
         with st.expander("체크리스트 업무 추가"):
             with st.form(f"add_task_{event_id}"):
                 title = st.text_input("업무명")
@@ -1180,7 +1249,23 @@ def events_page() -> None:
             "FROM event_templates LEFT JOIN task_templates ON task_templates.event_template_id=event_templates.id AND task_templates.data_quality<>'Stale' "
             "WHERE event_templates.status='CURRENT' GROUP BY event_templates.id ORDER BY event_templates.category,event_templates.title"
         )
-        st.dataframe(pd.DataFrame(templates)[["title", "category", "task_count", "unresolved_count", "source_sheet", "data_quality"]], hide_index=True, width="stretch")
+        template_frame = pd.DataFrame(templates)[
+            ["title", "category", "task_count", "unresolved_count", "source_sheet", "data_quality"]
+        ].rename(columns={
+            "title": "템플릿명",
+            "category": "분류",
+            "task_count": "업무 수",
+            "unresolved_count": "일정 확인 필요",
+            "source_sheet": "원본 시트",
+            "data_quality": "데이터 상태",
+        })
+        template_frame["데이터 상태"] = template_frame["데이터 상태"].map(quality_ko)
+        st.dataframe(
+            template_frame,
+            hide_index=True,
+            width="stretch",
+            height=320,
+        )
         with st.expander("새 템플릿 만들기"):
             manuals = rows("SELECT id,title FROM manuals WHERE status='CURRENT' ORDER BY title")
             manual_map = {"연결 안 함": None, **{item["title"]: item["id"] for item in manuals}}
@@ -1301,12 +1386,29 @@ def manuals_page() -> None:
         detail_tab, standard_tab, source_tab = st.tabs(["준비 상세", "운영 기준·이유", "원본 내용"])
         with detail_tab:
             if task_templates:
-                st.caption(f"원본 엑셀에서 구조화한 준비업무 {len(task_templates)}건입니다. 준비 시점, 준비물·수량, 비고를 함께 확인할 수 있습니다.")
-                current_timing = None
+                timing_groups: dict[str, list[dict[str, object]]] = {}
                 for task in task_templates:
+                    timing_groups.setdefault(task["source_timing"] or "준비 시점 미기록", []).append(task)
+                timing_options = list(timing_groups)
+                st.caption(
+                    f"준비업무 {len(task_templates)}건 · 준비 시점 {len(timing_options)}개 · "
+                    "아래에서 필요한 시점만 골라 확인하세요."
+                )
+                selected_timing = st.selectbox(
+                    "준비 시점",
+                    [*timing_options, "전체 보기"],
+                    key=f"manual_timing_{manual_id}",
+                )
+                visible_tasks = (
+                    task_templates
+                    if selected_timing == "전체 보기"
+                    else timing_groups[selected_timing]
+                )
+                current_timing = None
+                for task_index, task in enumerate(visible_tasks):
                     timing = task["source_timing"] or "준비 시점 미기록"
                     if timing != current_timing:
-                        st.markdown(f"#### {timing}")
+                        st.markdown(f"#### {timing} · {len(timing_groups[timing])}건")
                         current_timing = timing
                     if task["due_offset"] is None:
                         due_label = "일정 자동화 미정"
@@ -1314,9 +1416,12 @@ def manuals_page() -> None:
                         due_label = "D-Day"
                     else:
                         due_label = f"D{task['due_offset']:+d}"
-                    with st.container(border=True):
+                    with st.expander(
+                        f"{task['title']} · {due_label}",
+                        expanded=task_index == 0,
+                    ):
                         st.markdown(
-                            f"<strong>{html.escape(str(task['title']))}</strong> {badge(due_label, 'warn' if task['due_offset'] is None else '')} "
+                            f"{badge(due_label, 'warn' if task['due_offset'] is None else '')} "
                             f"{badge(quality_ko(task['data_quality']), 'warn' if task['data_quality']=='Needs Review' else '')}",
                             unsafe_allow_html=True,
                         )
@@ -1326,18 +1431,18 @@ def manuals_page() -> None:
                             st.caption(f"기본 담당자: {task['default_owner']}")
                 supplemental_marker = "## 추가 운영 안내"
                 if revision and supplemental_marker in (revision["how_text"] or ""):
-                    st.markdown("#### 추가 운영 안내")
-                    st.markdown(revision["how_text"].split(supplemental_marker, 1)[1].strip())
+                    with st.expander("추가 운영 안내"):
+                        st.markdown(revision["how_text"].split(supplemental_marker, 1)[1].strip())
             elif revision and revision["how_text"]:
                 st.markdown(revision["how_text"])
             else:
                 st.info("등록된 준비 상세가 없습니다.")
 
             if references:
-                st.markdown("#### 관련 참고자료")
-                for reference in references:
-                    detail = " · ".join(filter(None, [reference["ref_type"], reference["reference_time"], reference["description"]]))
-                    st.markdown(f"- [{reference['title']}]({reference['url']})" + (f" — {detail}" if detail else ""))
+                with st.expander(f"관련 참고자료 ({len(references)}개)"):
+                    for reference in references:
+                        detail = " · ".join(filter(None, [reference["ref_type"], reference["reference_time"], reference["description"]]))
+                        st.markdown(f"- [{reference['title']}]({reference['url']})" + (f" — {detail}" if detail else ""))
 
         with standard_tab:
             if revision:
@@ -1412,7 +1517,11 @@ def logs_page() -> None:
                 reason = st.text_area("결정 이유")
                 decided_by = st.text_input("결정자")
                 evidence = st.text_input("근거 URL/설명")
-                status = st.selectbox("상태", ["APPROVED", "PENDING", "REJECTED", "CHANGED"])
+                status = st.selectbox(
+                    "상태",
+                    ["APPROVED", "PENDING", "REJECTED", "CHANGED"],
+                    format_func=status_ko,
+                )
                 if st.form_submit_button("결정 저장", type="primary"):
                     if title:
                         add_decision({"event_id": event_map[event_label], "manual_id": manual_map[manual_label], "title": title, "previous_method": previous, "new_method": new, "reason": reason, "decided_at": date.today().isoformat(), "decided_by": decided_by, "evidence": evidence, "status": status})
@@ -1426,7 +1535,7 @@ def logs_page() -> None:
             st.info("등록된 결정이 없습니다.")
         for item in items:
             with st.expander(f"{item['decided_at'] or item['created_at'][:10]} · {item['title']}"):
-                st.markdown(f"{badge(item['status'])} {badge(item['event_title'] or '행사 미연결','gray')}", unsafe_allow_html=True)
+                st.markdown(f"{badge(status_ko(item['status']))} {badge(item['event_title'] or '행사 미연결','gray')}", unsafe_allow_html=True)
                 st.markdown(f"**이전 방식**  \n{item['previous_method'] or '-'}")
                 st.markdown(f"**새 방식**  \n{item['new_method'] or '-'}")
                 st.markdown(f"**이유**  \n{item['reason'] or '미기록'}")
@@ -1541,13 +1650,7 @@ def attendance_page() -> None:
         ("최고 인원", f"{int(filtered['total_count'].max())}명"),
         ("최저 인원", f"{int(filtered['total_count'].min())}명"),
     ]
-    st.markdown(
-        '<div class="ops-stat-grid">' + "".join(
-            f'<div class="ops-stat"><div class="label">{label}</div><div class="value">{value}</div></div>'
-            for label, value in stats
-        ) + "</div>",
-        unsafe_allow_html=True,
-    )
+    compact_stats(stats, columns=4)
     trend = filtered.sort_values(["service_date", "service_type"])
     fig = px.line(
         trend,
@@ -1562,14 +1665,28 @@ def attendance_page() -> None:
     with st.expander("상세 통계·데이터 품질"):
         st.subheader("예배 종류별")
         summary = filtered.groupby("service_type", as_index=False).agg(기록수=("id", "count"), 평균=("total_count", "mean"), 현장평균=("offline_count", "mean"), 온라인평균=("online_count", "mean"))
-        st.dataframe(summary.style.format({"평균": "{:.1f}", "현장평균": "{:.1f}", "온라인평균": "{:.1f}"}), hide_index=True, width="stretch")
+        st.dataframe(summary.style.format({"평균": "{:.1f}", "현장평균": "{:.1f}", "온라인평균": "{:.1f}"}), hide_index=True, width="stretch", height=220)
         st.subheader("데이터 품질")
         quality = data.groupby("data_quality", as_index=False).size()
-        st.dataframe(quality, hide_index=True, width="stretch")
+        quality["data_quality"] = quality["data_quality"].map(quality_ko)
+        quality = quality.rename(columns={"data_quality": "데이터 상태", "size": "건수"})
+        st.dataframe(quality, hide_index=True, width="stretch", height=180)
         flagged = data[data["data_quality"] == "Needs Review"][["service_date", "service_type", "online_count", "offline_count", "total_count", "notes"]]
         if not flagged.empty:
             st.warning(f"확인이 필요한 예배 인원 기록 {len(flagged)}건")
-            st.dataframe(flagged, hide_index=True, width="stretch")
+            st.dataframe(
+                flagged.rename(columns={
+                    "service_date": "예배일",
+                    "service_type": "예배 종류",
+                    "online_count": "온라인",
+                    "offline_count": "현장",
+                    "total_count": "총인원",
+                    "notes": "확인 내용",
+                }),
+                hide_index=True,
+                width="stretch",
+                height=240,
+            )
     st.caption("통계의 변화는 운영 이벤트와 함께 참고할 수 있지만, 자동으로 인과관계를 주장하지 않습니다.")
 
 
@@ -1581,10 +1698,12 @@ def search_page() -> None:
         st.info("검색어를 입력하세요.")
         return
     results = global_search(term, include_archived)
-    st.caption(f"검색 결과 {len(results)}건")
+    display_limit = st.selectbox("한 번에 보기", [10, 25, 50], index=1, key="global_search_limit")
+    visible_results = results[:display_limit]
+    st.caption(f"검색 결과 {len(results)}건 · 현재 {len(visible_results)}건 표시")
     if not results:
         st.warning("결과가 없습니다.")
-    for index, item in enumerate(results):
+    for index, item in enumerate(visible_results):
         with st.container(border=True):
             content_col, action_col = st.columns([.82, .18])
             tone = "gray" if item["archived"] else ""
@@ -1641,29 +1760,36 @@ def calendar_page() -> None:
     sync_status = row(
         "SELECT MAX(synced_at) AS last_sync,COUNT(*) AS total FROM church_calendar_events WHERE archived_at IS NULL"
     ) or {"last_sync": None, "total": 0}
-    status_cols = st.columns(3)
-    status_cols[0].metric("다가오는 일정", f"{len(upcoming)}건")
-    status_cols[1].metric("저장된 교회력", f"{sync_status['total']}건")
-    status_cols[2].metric("마지막 동기화", (sync_status["last_sync"] or "연동 전")[:16])
+    last_sync_label = (sync_status["last_sync"] or "연동 전").replace("T", " ")
+    if last_sync_label != "연동 전" and len(last_sync_label) >= 16:
+        last_sync_label = last_sync_label[5:16]
+    compact_stats([
+        ("다가오는 일정", f"{len(upcoming)}건"),
+        ("저장된 일정", f"{sync_status['total']}건"),
+        ("마지막 동기화", last_sync_label),
+    ], columns=3)
 
     st.subheader("다가오는 일정")
     if upcoming:
-        for item in upcoming:
+        calendar_limit = st.selectbox("한 번에 보기", [10, 20, 30], key="calendar_display_limit")
+        st.caption(f"다가오는 일정 {len(upcoming)}건 · 현재 {min(len(upcoming), calendar_limit)}건 표시")
+        for item in upcoming[:calendar_limit]:
             with st.container(border=True):
-                date_col, content_col, link_col = st.columns([.18, .62, .20])
-                date_col.markdown(f"**{dday(item['start_date'])}**")
-                date_col.caption(item["start_date"])
-                content_col.markdown(f"**{item['title']}**")
+                st.markdown(
+                    f"{badge(dday(item['start_date']), 'warn')} {badge(item['start_date'], 'gray')}  "
+                    f"**{html.escape(str(item['title']))}**",
+                    unsafe_allow_html=True,
+                )
                 if item["location"]:
-                    content_col.caption(item["location"])
+                    st.caption(f"장소 · {item['location']}")
                 if item["description"]:
-                    content_col.caption(search_excerpt(item["description"], "", 180))
+                    st.caption(search_excerpt(item["description"], "", 180))
                 if item["html_link"]:
-                    link_col.link_button("캘린더 열기", item["html_link"], width="stretch")
+                    st.link_button("Google Calendar에서 보기", item["html_link"], width="stretch")
     else:
         st.info("아직 동기화된 교회력 일정이 없습니다.")
 
-    with st.expander("Google Calendar 연결 설정", expanded=not bool(upcoming)):
+    with st.expander("Google Calendar 연결 설정", expanded=False):
         calendar_credentials, calendar_secret_error = service_account_secret("GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT")
         try:
             secret_calendar_id = str(st.secrets["GOOGLE_CALENDAR_ID"]).strip()
@@ -1711,7 +1837,7 @@ def calendar_page() -> None:
 
 
 def data_page() -> None:
-    hero("데이터·백업", "원본 → Parsing → Validation → Normalization → Database 흐름을 확인합니다.")
+    hero("데이터·백업", "원본 가져오기부터 형식 확인·정리·저장 상태까지 확인합니다.")
     st.subheader("Google Sheets 원본")
     google_sheets_sync_bar()
     st.caption("예배팀 매뉴얼과 예배인원·엔지니어 라인업은 읽기 전용으로 가져옵니다.")
@@ -1725,9 +1851,12 @@ def data_page() -> None:
         if IMPORT_REPORT_PATH.exists():
             report = json.loads(IMPORT_REPORT_PATH.read_text(encoding="utf-8"))
             counts = report.get("imported", {})
-            cols = st.columns(4)
-            for column, (label, key) in zip(cols, [("Attendance", "attendance"), ("Manuals", "manuals"), ("Events", "events"), ("Members", "members")]):
-                column.metric(label, counts.get(key, 0))
+            compact_stats([
+                ("예배 인원", counts.get("attendance", 0)),
+                ("매뉴얼", counts.get("manuals", 0)),
+                ("행사", counts.get("events", 0)),
+                ("인원 명단", counts.get("members", 0)),
+            ], columns=4)
             st.json(report, expanded=False)
         else:
             st.info("가져오기 결과가 없습니다.")
@@ -1750,7 +1879,25 @@ def data_page() -> None:
         if not unresolved:
             st.success("확인이 필요한 항목이 없습니다.")
         else:
-            st.dataframe(pd.DataFrame(unresolved)[["quality", "file_name", "sheet_name", "cell_reference", "raw_value", "reason", "status"]], hide_index=True, width="stretch")
+            unresolved_frame = pd.DataFrame(unresolved)[
+                ["quality", "file_name", "sheet_name", "cell_reference", "raw_value", "reason", "status"]
+            ].rename(columns={
+                "quality": "데이터 상태",
+                "file_name": "원본 파일",
+                "sheet_name": "시트",
+                "cell_reference": "셀 위치",
+                "raw_value": "원본 값",
+                "reason": "확인 이유",
+                "status": "처리 상태",
+            })
+            unresolved_frame["데이터 상태"] = unresolved_frame["데이터 상태"].map(quality_ko)
+            unresolved_frame["처리 상태"] = unresolved_frame["처리 상태"].replace({"OPEN": "확인 필요", "RESOLVED": "처리 완료"})
+            st.dataframe(
+                unresolved_frame,
+                hide_index=True,
+                width="stretch",
+                height=360,
+            )
     with backup_tab:
         st.markdown("중요한 운영지식은 JSON 전체 백업과 테이블별 CSV로 내보낼 수 있습니다.")
         if st.button("백업 생성", type="primary"):
