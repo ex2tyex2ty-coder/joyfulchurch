@@ -97,6 +97,15 @@ def sync_google_calendar(
         token_path.write_text(credentials.to_json(), encoding="utf-8")
 
     service = build("calendar", "v3", credentials=credentials, cache_discovery=False)
+    return _sync_with_service(service, calendar_id, db_path, days_ahead)
+
+
+def _sync_with_service(
+    service: Any,
+    calendar_id: str,
+    db_path: Path | str = DB_PATH,
+    days_ahead: int = 370,
+) -> dict[str, Any]:
     time_min = datetime.now(timezone.utc)
     time_max = time_min + timedelta(days=days_ahead)
     items: list[dict[str, Any]] = []
@@ -112,7 +121,7 @@ def sync_google_calendar(
             showDeleted=True,
             maxResults=250,
             pageToken=page_token,
-        ).execute()
+        ).execute(num_retries=2)
         calendar_title = response.get("summary") or calendar_title
         items.extend(response.get("items", []))
         page_token = response.get("nextPageToken")
@@ -121,3 +130,24 @@ def sync_google_calendar(
 
     saved = store_google_events(calendar_id, items, db_path)
     return {"calendar": calendar_title, "received": len(items), "saved": saved}
+
+
+def sync_google_calendar_service_account(
+    calendar_id: str,
+    service_account_info: dict[str, Any],
+    db_path: Path | str = DB_PATH,
+    days_ahead: int = 370,
+) -> dict[str, Any]:
+    """Synchronize a Calendar shared to a service account, using read-only scope only."""
+    try:
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+    except ImportError as exc:
+        raise RuntimeError("Google Calendar 연동 패키지가 설치되지 않았습니다. requirements.txt를 설치하세요.") from exc
+
+    credentials = Credentials.from_service_account_info(
+        service_account_info,
+        scopes=[READONLY_SCOPE],
+    )
+    service = build("calendar", "v3", credentials=credentials, cache_discovery=False)
+    return _sync_with_service(service, calendar_id, db_path, days_ahead)

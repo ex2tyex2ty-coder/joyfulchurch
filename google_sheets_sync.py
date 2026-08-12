@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 import urllib.request
+import uuid
 import zipfile
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,7 +14,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 from config import DB_PATH, GOOGLE_SHEETS, GOOGLE_SHEETS_CACHE_DIR, ensure_directories
-from db import set_app_meta
+from db import connect, set_app_meta
 from migration import migrate, workbook_role
 
 
@@ -64,6 +67,36 @@ def _validate_workbook(path: Path) -> dict[str, Any]:
         workbook.close()
 
 
+def _publish_clean_cache(staging_dir: Path) -> None:
+    """Atomically replace the cache with the successfully migrated staging set."""
+    cache_dir = GOOGLE_SHEETS_CACHE_DIR
+    backup_dir = cache_dir.parent / f".{cache_dir.name}.backup-{uuid.uuid4().hex}"
+    had_cache = cache_dir.exists()
+
+    try:
+        if had_cache:
+            os.replace(cache_dir, backup_dir)
+        os.replace(staging_dir, cache_dir)
+    except Exception:
+        if had_cache and backup_dir.exists() and not cache_dir.exists():
+            os.replace(backup_dir, cache_dir)
+        raise
+    else:
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+def _point_source_records_to_cache(db_path: Path) -> None:
+    """Replace temporary staging paths recorded by migration with durable cache paths."""
+    with closing(connect(db_path)) as conn:
+        for sheet in GOOGLE_SHEETS:
+            conn.execute(
+                "UPDATE source_files SET path=? WHERE file_name=?",
+                (str(GOOGLE_SHEETS_CACHE_DIR / sheet["file_name"]), sheet["file_name"]),
+            )
+        conn.commit()
+
+
 def sync_google_sheets(
     db_path: Path = DB_PATH,
     service_account_info: dict[str, Any] | None = None,
@@ -71,23 +104,24 @@ def sync_google_sheets(
     """Download the configured public Sheets as read-only XLSX files and merge them."""
     ensure_directories()
     downloaded: list[dict[str, Any]] = []
-    staged: list[tuple[Path, Path]] = []
+    staging_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{GOOGLE_SHEETS_CACHE_DIR.name}.staging-",
+            dir=GOOGLE_SHEETS_CACHE_DIR.parent,
+        )
+    )
     try:
         for sheet in GOOGLE_SHEETS:
-            fd, temp_name = tempfile.mkstemp(prefix="joyful_sheet_", suffix=".xlsx", dir=GOOGLE_SHEETS_CACHE_DIR)
-            os.close(fd)
-            temp_path = Path(temp_name)
-            final_path = GOOGLE_SHEETS_CACHE_DIR / sheet["file_name"]
-            _download_xlsx(sheet["spreadsheet_id"], temp_path, service_account_info=service_account_info)
-            details = _validate_workbook(temp_path)
+            staged_path = staging_dir / sheet["file_name"]
+            _download_xlsx(sheet["spreadsheet_id"], staged_path, service_account_info=service_account_info)
+            details = _validate_workbook(staged_path)
             downloaded.append({"label": sheet["label"], "file": sheet["file_name"], **details})
-            staged.append((temp_path, final_path))
 
-        # Publish the cache only after every workbook has downloaded and validated.
-        for temp_path, final_path in staged:
-            os.replace(temp_path, final_path)
-
-        report = migrate(source_dir=GOOGLE_SHEETS_CACHE_DIR, db_path=db_path, reset=False)
+        # Migrate only this clean, validated snapshot. The previous cache remains
+        # untouched until the database migration has completed successfully.
+        report = migrate(source_dir=staging_dir, db_path=db_path, reset=False)
+        _publish_clean_cache(staging_dir)
+        _point_source_records_to_cache(db_path)
         synced_at = datetime.now().isoformat(timespec="seconds")
         set_app_meta("last_google_sheets_sync_at", synced_at, db_path)
         set_app_meta("last_google_sheets_sync_status", "SUCCESS", db_path)
@@ -96,5 +130,5 @@ def sync_google_sheets(
         set_app_meta("last_google_sheets_sync_status", f"ERROR: {exc}", db_path)
         raise
     finally:
-        for temp_path, _ in staged:
-            temp_path.unlink(missing_ok=True)
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)

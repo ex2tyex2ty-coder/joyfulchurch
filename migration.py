@@ -297,18 +297,30 @@ def create_manual(
     current_standard: str,
     quality: str = QUALITY_IMPORTED,
 ) -> int:
-    existing = conn.execute("SELECT id FROM manuals WHERE source=? AND source_sheet=?", (source_file, source_sheet)).fetchone()
+    existing = conn.execute("SELECT id,data_quality FROM manuals WHERE source=? AND source_sheet=?", (source_file, source_sheet)).fetchone()
     if existing:
         manual_id = int(existing["id"])
         current = conn.execute(
             "SELECT * FROM manual_revisions WHERE manual_id=? AND status='CURRENT' ORDER BY version DESC LIMIT 1",
             (manual_id,),
         ).fetchone()
-        conn.execute(
-            "UPDATE manuals SET title=?,category=?,current_standard=?,data_quality=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (title, category, current_standard, quality, manual_id),
+        source_revision_summaries = {"기존 Spreadsheet 최초 이관", "Google Sheets 자동 동기화"}
+        user_current = bool(
+            current
+            and existing["data_quality"] == "Verified"
+            and str(current["change_summary"] or "") not in source_revision_summaries
         )
-        if not current or (current["how_text"] or "").strip() != how_text.strip():
+        if user_current:
+            conn.execute(
+                "UPDATE manuals SET title=?,category=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (title, category, manual_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE manuals SET title=?,category=?,current_standard=?,data_quality=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (title, category, current_standard, quality, manual_id),
+            )
+        if not user_current and (not current or (current["how_text"] or "").strip() != how_text.strip()):
             next_version = int(conn.execute(
                 "SELECT COALESCE(MAX(version),0)+1 AS version FROM manual_revisions WHERE manual_id=?", (manual_id,)
             ).fetchone()["version"])
@@ -437,6 +449,10 @@ def import_manual_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
             if cur.rowcount:
                 template_count += 1
             event_template_id = int(template["id"])
+            conn.execute(
+                "UPDATE task_templates SET data_quality='Stale' WHERE event_template_id=? AND source LIKE ?",
+                (event_template_id, f"{path.name} / {sheet.title}!%"),
+            )
             for task_record in task_records:
                 upsert_task_template(
                     conn, event_template_id, task_record["title"], task_record["description"], task_record["timing"], task_record["offset"],
@@ -658,7 +674,10 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
                     event_count += 1
                     conn.execute("UPDATE attendance SET event_id=? WHERE service_date=?", (event_id, service_date))
                     if template_id:
-                        templates = conn.execute("SELECT * FROM task_templates WHERE event_template_id=?", (template_id,)).fetchall()
+                        templates = conn.execute(
+                            "SELECT * FROM task_templates WHERE event_template_id=? AND data_quality<>'Stale'",
+                            (template_id,),
+                        ).fetchall()
                         for task in templates:
                             due_date = None
                             if task["due_offset"] is not None:
@@ -690,6 +709,10 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
         if template_cur.rowcount:
             event_template_count += 1
         template_id = int(conn.execute("SELECT id FROM event_templates WHERE title=?", (template_title,)).fetchone()["id"])
+        conn.execute(
+            "UPDATE task_templates SET data_quality='Stale' WHERE event_template_id=? AND source LIKE ?",
+            (template_id, f"{path.name} / {sheet_name}!%"),
+        )
         timing = section = ""
         for row_number, row_values in enumerate(values[1:], start=2):
             cells = list(row_values) + [None] * 5

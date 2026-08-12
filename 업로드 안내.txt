@@ -1,17 +1,19 @@
 JOYFUL WORSHIP OPS — GitHub 업로드 안내
 
-1. GitHub에서 만든 joyful-worship-ops 저장소를 엽니다.
-2. "uploading an existing file"을 누릅니다.
-3. 이 폴더 안의 파일과 data 폴더를 모두 끌어다 놓습니다.
-4. 화면 아래 "Commit changes"를 누릅니다.
+1. GitHub의 ex2tyex2ty-coder/joyfulchurch 저장소를 엽니다.
+2. 상단 Add file → Upload files를 누릅니다.
+3. 이 폴더 안의 파일과 .streamlit, data 폴더를 모두 끌어다 놓습니다.
+4. 화면 아래 Commit changes를 누릅니다.
+5. Streamlit Cloud에서 자동 재배포가 시작되면 완료될 때까지 기다립니다.
 
 Streamlit 배포 설정
-- Repository: ex2tyex2ty-coder/joyful-worship-ops
+- Repository: ex2tyex2ty-coder/joyfulchurch
 - Branch: main
 - Main file path: app.py
-- App URL 예시: joyful-worship-ops
+- App URL: https://joyfulchurch.streamlit.app/
 
 중요
 - data 폴더의 joyful_worship_ops.db는 앱 초기 데이터를 담고 있으므로 함께 올립니다.
 - 원본 엑셀, 백업, Google 인증 JSON과 토큰은 이 폴더에 포함하지 않았습니다.
+- Streamlit Secrets는 GitHub에 올리지 마세요. 이미 설정한 게시판 Secret은 Streamlit Cloud에 유지됩니다.
 - 이 안내 파일은 앱 실행에 필요하지 않지만 함께 올려도 안전합니다.

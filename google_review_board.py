@@ -16,6 +16,7 @@ AUDIT_SHEET = "변경이력"
 ITEM_HEADERS = [
     "item_id", "title", "description", "status", "created_by", "updated_by",
     "created_at", "updated_at", "confirmed_at", "archived_at",
+    "category", "priority", "owner", "due_date",
 ]
 COMMENT_HEADERS = [
     "comment_id", "review_item_id", "parent_comment_id", "author", "body",
@@ -25,8 +26,10 @@ AUDIT_HEADERS = [
     "log_id", "entity_type", "entity_id", "action", "author", "before_status",
     "after_status", "details", "created_at",
 ]
+BACKUP_SCHEMA_VERSION = 1
 VALID_STATUSES = {"REVIEW_REQUIRED", "IN_PROGRESS", "CONFIRMED"}
 STATUS_ORDER = {"REVIEW_REQUIRED": 0, "IN_PROGRESS": 1, "CONFIRMED": 2}
+VALID_PRIORITIES = {"NORMAL", "HIGH", "URGENT"}
 
 
 class ReviewBoardConnectionError(RuntimeError):
@@ -34,7 +37,7 @@ class ReviewBoardConnectionError(RuntimeError):
 
 
 def _now() -> str:
-    return datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds")
+    return datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="microseconds")
 
 
 def _records(headers: list[str], values: list[list[Any]]) -> list[dict[str, Any]]:
@@ -66,7 +69,13 @@ def build_snapshot(
         if str(item.get("item_id", "")).strip() and not str(item.get("archived_at", "")).strip()
     }
     grouped_comments: dict[str, list[dict[str, Any]]] = {item_id: [] for item_id in active_items}
+    seen_comment_ids: set[str] = set()
     for comment in sorted(comments, key=lambda value: (str(value.get("created_at", "")), str(value.get("comment_id", "")))):
+        comment_id = str(comment.get("comment_id", "")).strip()
+        if comment_id:
+            if comment_id in seen_comment_ids:
+                continue
+            seen_comment_ids.add(comment_id)
         item_id = str(comment.get("review_item_id", ""))
         if item_id not in active_items or str(comment.get("archived_at", "")).strip():
             continue
@@ -87,6 +96,10 @@ def build_snapshot(
         counts[status] += 1
         item["id"] = str(item["item_id"])
         item["comment_count"] = len(grouped_comments.get(str(item["item_id"]), []))
+        if str(item.get("priority", "")) not in VALID_PRIORITIES:
+            item["priority"] = "NORMAL"
+        if not str(item.get("category", "")).strip():
+            item["category"] = "기타"
 
     visible = [
         item for item in active_items.values()
@@ -115,6 +128,34 @@ def build_snapshot(
     }
 
 
+def filter_review_items(
+    items: list[dict[str, Any]],
+    status_filter: str = "OPEN",
+    category: str = "전체",
+    term: str = "",
+) -> list[dict[str, Any]]:
+    """Filter board items without changing the source snapshot."""
+    search_terms = term.casefold().split()
+    filtered: list[dict[str, Any]] = []
+    for item in items:
+        status = str(item.get("status", "REVIEW_REQUIRED"))
+        if status_filter == "OPEN" and status == "CONFIRMED":
+            continue
+        if status_filter in VALID_STATUSES and status != status_filter:
+            continue
+        if category != "전체" and str(item.get("category", "기타")) != category:
+            continue
+        searchable = " ".join(
+            str(item.get(key, ""))
+            for key in ("title", "description", "category", "priority", "owner", "due_date", "created_by", "updated_by")
+        ).casefold()
+        normalized_searchable = " ".join(searchable.split())
+        if search_terms and any(search_term not in normalized_searchable for search_term in search_terms):
+            continue
+        filtered.append(dict(item))
+    return filtered
+
+
 class GoogleReviewBoardStore:
     def __init__(self, spreadsheet_id: str, service_account_info: dict[str, Any]):
         try:
@@ -135,10 +176,10 @@ class GoogleReviewBoardStore:
         self._lock = threading.RLock()
         self.ensure_schema()
 
-    def _execute(self, request: Any) -> dict[str, Any]:
+    def _execute(self, request: Any, *, num_retries: int = 2) -> dict[str, Any]:
         try:
             with self._lock:
-                return request.execute()
+                return request.execute(num_retries=num_retries)
         except Exception as exc:
             raise ReviewBoardConnectionError(f"게시판 Google Sheets 연결 오류: {exc}") from exc
 
@@ -192,11 +233,16 @@ class GoogleReviewBoardStore:
         updates: list[dict[str, Any]] = []
         for index, (title, headers) in enumerate(header_specs):
             existing = existing_ranges[index].get("values", []) if index < len(existing_ranges) else []
-            existing_header = existing[0][: len(headers)] if existing else []
-            if existing_header and existing_header != headers:
+            existing_header = existing[0] if existing else []
+            expected_prefix = headers[: len(existing_header)]
+            if existing_header and existing_header != expected_prefix:
                 raise ReviewBoardConnectionError(f"'{title}' 시트의 첫 행이 예상 구조와 다릅니다. 덮어쓰지 않았습니다.")
-            if not existing_header:
-                updates.append({"range": f"'{title}'!A1", "values": [headers]})
+            if len(existing_header) < len(headers):
+                start_column = self._column_name(len(existing_header) + 1)
+                updates.append({
+                    "range": f"'{title}'!{start_column}1",
+                    "values": [headers[len(existing_header):]],
+                })
         if updates:
             self._execute(
                 self.service.spreadsheets().values().batchUpdate(
@@ -209,7 +255,7 @@ class GoogleReviewBoardStore:
         result = self._execute(
             self.service.spreadsheets().values().batchGet(
                 spreadsheetId=self.spreadsheet_id,
-                ranges=[f"'{ITEM_SHEET}'!A2:J", f"'{COMMENT_SHEET}'!A2:H"],
+                ranges=[f"'{ITEM_SHEET}'!A2:N", f"'{COMMENT_SHEET}'!A2:H"],
             )
         )
         value_ranges = result.get("valueRanges", [])
@@ -221,26 +267,63 @@ class GoogleReviewBoardStore:
         item_values, comment_values = self._raw_values()
         return build_snapshot(item_values, comment_values, show_confirmed=show_confirmed, limit=limit)
 
+    def _raw_audit_values(self) -> list[list[Any]]:
+        result = self._execute(
+            self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"'{AUDIT_SHEET}'!A2:I",
+            )
+        )
+        return result.get("values", [])
+
     def export_json(self) -> bytes:
         snapshot = self.snapshot(show_confirmed=True, limit=1_000_000)
         payload = {
+            "schema_version": BACKUP_SCHEMA_VERSION,
             "exported_at": _now(),
             "spreadsheet_id": self.spreadsheet_id,
             "items": snapshot["raw_items"],
             "comments": snapshot["raw_comments"],
+            "audit_logs": _records(AUDIT_HEADERS, self._raw_audit_values()),
         }
         return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
 
+    @staticmethod
+    def _column_name(number: int) -> str:
+        result = ""
+        while number:
+            number, remainder = divmod(number - 1, 26)
+            result = chr(65 + remainder) + result
+        return result
+
     def _append(self, sheet_name: str, row: list[Any]) -> None:
-        self._execute(
-            self.service.spreadsheets().values().append(
-                spreadsheetId=self.spreadsheet_id,
-                range=f"'{sheet_name}'!A:A",
-                valueInputOption="RAW",
-                insertDataOption="INSERT_ROWS",
-                body={"values": [row]},
+        """Append once and verify the generated identifier after an uncertain failure."""
+        identifier = str(row[0]) if row else ""
+        try:
+            self._execute(
+                self.service.spreadsheets().values().append(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=f"'{sheet_name}'!A:A",
+                    valueInputOption="RAW",
+                    insertDataOption="INSERT_ROWS",
+                    body={"values": [row]},
+                ),
+                num_retries=0,
             )
-        )
+        except ReviewBoardConnectionError:
+            if identifier:
+                try:
+                    result = self._execute(
+                        self.service.spreadsheets().values().get(
+                            spreadsheetId=self.spreadsheet_id,
+                            range=f"'{sheet_name}'!A:A",
+                        )
+                    )
+                    if any(values and str(values[0]) == identifier for values in result.get("values", [])):
+                        return
+                except ReviewBoardConnectionError:
+                    pass
+            raise
 
     def _audit(
         self,
@@ -257,12 +340,22 @@ class GoogleReviewBoardStore:
             [uuid.uuid4().hex, entity_type, entity_id, action, author, before_status, after_status, details, _now()],
         )
 
-    def create_item(self, title: str, description: str, created_by: str) -> str:
+    def create_item(
+        self,
+        title: str,
+        description: str,
+        created_by: str,
+        category: str = "기타",
+        priority: str = "NORMAL",
+        owner: str = "",
+        due_date: str = "",
+    ) -> str:
         title = title.strip()
         description = description.strip()
         created_by = created_by.strip()
         if not title or not created_by:
             raise ValueError("제목과 작성자를 입력하세요.")
+        priority = priority if priority in VALID_PRIORITIES else "NORMAL"
         item_id = uuid.uuid4().hex
         created_at = _now()
         self._append(
@@ -270,6 +363,7 @@ class GoogleReviewBoardStore:
             [
                 item_id, title[:200], description[:4000], "REVIEW_REQUIRED", created_by[:80],
                 created_by[:80], created_at, created_at, "", "",
+                category.strip()[:80] or "기타", priority, owner.strip()[:80], due_date.strip()[:10],
             ],
         )
         try:
@@ -300,11 +394,27 @@ class GoogleReviewBoardStore:
         if not item:
             raise ValueError("확인항목을 찾을 수 없습니다.")
 
+        normalized_parent_id = (parent_comment_id or "").strip()
+        if normalized_parent_id:
+            parent = next(
+                (
+                    comment
+                    for grouped in snapshot["comments"].values()
+                    for comment in grouped
+                    if str(comment.get("comment_id", "")) == normalized_parent_id
+                ),
+                None,
+            )
+            if parent is None:
+                raise ValueError("답글 대상 댓글을 찾을 수 없습니다.")
+            if str(parent.get("review_item_id", "")) != str(review_item_id):
+                raise ValueError("답글은 같은 확인항목의 댓글에만 등록할 수 있습니다.")
+
         comment_id = uuid.uuid4().hex
         created_at = _now()
         self._append(
             COMMENT_SHEET,
-            [comment_id, str(review_item_id), parent_comment_id or "", author[:80], body[:4000], status_change or "", created_at, ""],
+            [comment_id, str(review_item_id), normalized_parent_id, author[:80], body[:4000], status_change or "", created_at, ""],
         )
 
         # Keep the human-readable item row current. The snapshot still replays the

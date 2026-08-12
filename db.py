@@ -509,7 +509,7 @@ def create_event(
         event_id = int(cur.lastrowid)
         if template_id:
             templates = conn.execute(
-                "SELECT * FROM task_templates WHERE event_template_id=? ORDER BY due_offset, id", (template_id,)
+                "SELECT * FROM task_templates WHERE event_template_id=? AND data_quality<>'Stale' ORDER BY due_offset, id", (template_id,)
             ).fetchall()
             task_id_map: dict[int, int] = {}
             for item in templates:
@@ -729,7 +729,7 @@ def revise_manual(
             (manual_id, version, what_text, how_text, why_text, caution, change_summary, date.today().isoformat()),
         )
         conn.execute(
-            "UPDATE manuals SET version=?, current_standard=?, updated_at=CURRENT_TIMESTAMP, status='CURRENT' WHERE id=?",
+            "UPDATE manuals SET version=?, current_standard=?, data_quality='Verified', updated_at=CURRENT_TIMESTAMP, status='CURRENT' WHERE id=?",
             (version, current_standard, manual_id),
         )
         audit(conn, "manual", manual_id, "REVISION", before={"version": manual["version"]}, after={"version": version, "summary": change_summary})
@@ -739,7 +739,7 @@ def revise_manual(
 def verify_manual(manual_id: int, path: Path | str = DB_PATH) -> None:
     with transaction(path) as conn:
         before = conn.execute("SELECT last_verified FROM manuals WHERE id=?", (manual_id,)).fetchone()
-        conn.execute("UPDATE manuals SET last_verified=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (date.today().isoformat(), manual_id))
+        conn.execute("UPDATE manuals SET last_verified=?, data_quality='Verified', updated_at=CURRENT_TIMESTAMP WHERE id=?", (date.today().isoformat(), manual_id))
         audit(conn, "manual", manual_id, "VERIFY", before=before, after={"last_verified": date.today().isoformat()})
 
 
@@ -819,7 +819,7 @@ def global_search(term: str, include_archived: bool = False, path: Path | str = 
             "CASE WHEN manuals.status='CURRENT' AND event_templates.status='CURRENT' THEN 0 ELSE 1 END AS archived "
             "FROM task_templates JOIN event_templates ON event_templates.id=task_templates.event_template_id "
             "JOIN manuals ON manuals.id=event_templates.manual_id "
-            "WHERE (task_templates.title LIKE ? OR COALESCE(task_templates.description,'') LIKE ? OR COALESCE(task_templates.source_timing,'') LIKE ?) "
+            "WHERE task_templates.data_quality<>'Stale' AND (task_templates.title LIKE ? OR COALESCE(task_templates.description,'') LIKE ? OR COALESCE(task_templates.source_timing,'') LIKE ?) "
             + ("" if include_archived else "AND manuals.status='CURRENT' AND manuals.archived_at IS NULL AND event_templates.status='CURRENT' ")
             + "LIMIT 50",
             (like, like, like),
