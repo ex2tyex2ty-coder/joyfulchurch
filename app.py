@@ -59,18 +59,22 @@ from migration import migrate
 
 st.set_page_config(page_title=APP_TITLE, page_icon="⛪", layout="wide", initial_sidebar_state="expanded")
 
+# Match charts to the same Joyful Church brand palette.
+px.defaults.template = "plotly_white"
+px.defaults.color_discrete_sequence = ["#FF8207", "#B84B00", "#FFC166", "#5B4A3E"]
+
 CSS = """
 <style>
-:root { --navy:#17324D; --teal:#1F6F78; --mint:#EAF4F4; --sand:#F5F1EA; --red:#A33B32; color-scheme:light !important; }
+:root { --ink:#2C1F16; --orange:#FF8207; --orange-dark:#B84B00; --orange-soft:#FFF0DE; --cream:#FFFDF9; --red:#A33B32; color-scheme:light !important; }
 html, body, .stApp { color-scheme:light !important; }
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
-  background:#F8FAFB !important; color:#20313D !important;
+  background:#FFFDF9 !important; color:#30251D !important;
 }
-[data-testid="stHeader"] { background:rgba(248,250,251,.96) !important; }
-[data-testid="stToolbar"] button, [data-testid="stHeaderActionElements"] button { color:#17324D !important; }
-[data-testid="stSidebar"] { background:#17324D; }
-[data-testid="stSidebar"] * { color:#F4F8FA !important; }
-[data-testid="stSidebar"] input { color:#20313D !important; }
+[data-testid="stHeader"] { background:rgba(255,253,249,.96) !important; }
+[data-testid="stToolbar"] button, [data-testid="stHeaderActionElements"] button { color:#2C1F16 !important; }
+[data-testid="stSidebar"] { background:#2E241D; }
+[data-testid="stSidebar"] * { color:#FFF9F2 !important; }
+[data-testid="stSidebar"] input { color:#30251D !important; }
 /* Keep the sidebar open/close control visible in System and Dark modes. */
 [data-testid="stSidebarCollapseButton"] button,
 [data-testid="stSidebarCollapsedControl"] button,
@@ -78,8 +82,8 @@ html, body, .stApp { color-scheme:light !important; }
 button[data-testid="stExpandSidebarButton"],
 button[data-testid="stBaseButton-headerNoPadding"] {
   -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
-  background:#176B75 !important; background-image:none !important;
-  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important;
+  background:#FF8207 !important; background-image:none !important;
+  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
   border:2px solid #FFFFFF !important; border-radius:999px !important;
   width:2.65rem !important; height:2.65rem !important; min-width:2.65rem !important;
   opacity:1 !important; box-shadow:0 2px 8px rgba(0,0,0,.28) !important;
@@ -89,14 +93,14 @@ button[data-testid="stBaseButton-headerNoPadding"] {
 [data-testid="collapsedControl"] button *,
 button[data-testid="stExpandSidebarButton"] *,
 button[data-testid="stBaseButton-headerNoPadding"] * {
-  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important;
-  fill:#FFFFFF !important; stroke:#FFFFFF !important; opacity:1 !important;
+  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
+  fill:#2C1F16 !important; stroke:#2C1F16 !important; opacity:1 !important;
 }
 [data-testid="stSidebarCollapseButton"] svg,
 [data-testid="stSidebarCollapsedControl"] svg,
 [data-testid="collapsedControl"] svg,
-button[data-testid="stExpandSidebarButton"] svg { fill:#FFFFFF !important; color:#FFFFFF !important; }
-h1,h2,h3,h4,h5,h6 { color:#17324D !important; letter-spacing:-.02em; }
+button[data-testid="stExpandSidebarButton"] svg { fill:#2C1F16 !important; color:#2C1F16 !important; }
+h1,h2,h3,h4,h5,h6 { color:#2C1F16 !important; letter-spacing:-.02em; }
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] li,
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] span,
@@ -106,32 +110,32 @@ h1,h2,h3,h4,h5,h6 { color:#17324D !important; letter-spacing:-.02em; }
 [data-testid="stMainBlockContainer"] [data-testid="stWidgetLabel"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stCheckbox"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stToggle"] p {
-  color:#2D404A !important; -webkit-text-fill-color:#2D404A !important; opacity:1 !important;
+  color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important; opacity:1 !important;
 }
-a { color:#176B75; }
-.ops-hero { background:linear-gradient(120deg,#17324D,#1F6F78); color:white; border-radius:20px; padding:1.35rem 1.5rem; margin-bottom:1.1rem; box-shadow:0 10px 25px rgba(23,50,77,.12); }
-.ops-hero h1 { color:white !important; -webkit-text-fill-color:white !important; margin:0; font-size:1.85rem; }
-.ops-hero p { color:white !important; -webkit-text-fill-color:white !important; margin:.35rem 0 0; opacity:.92 !important; }
-.ops-card { background:white; border:1px solid #DDE6EA; border-radius:16px; padding:1rem 1.05rem; min-height:110px; box-shadow:0 3px 12px rgba(23,50,77,.04); }
-.ops-card .label { color:#647782; font-size:.82rem; margin-bottom:.25rem; }
-.ops-card .value { color:#17324D; font-weight:750; font-size:1.55rem; }
-.ops-card .note { color:#6A7B85; font-size:.78rem; margin-top:.3rem; }
-.ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1rem; padding-bottom:.85rem; border-bottom:1px solid #DDE6EA; }
+a { color:#AD4700; }
+.ops-hero { background:linear-gradient(120deg,#FFA640,#FF8207); color:#2C1F16; border-radius:20px; padding:1.35rem 1.5rem; margin-bottom:1.1rem; box-shadow:0 10px 25px rgba(184,75,0,.16); }
+.ops-hero h1 { color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; margin:0; font-size:1.85rem; }
+.ops-hero p { color:#3B2A1E !important; -webkit-text-fill-color:#3B2A1E !important; margin:.35rem 0 0; opacity:1 !important; }
+.ops-card { background:white; border:1px solid #EBD6C2; border-radius:16px; padding:1rem 1.05rem; min-height:110px; box-shadow:0 3px 12px rgba(88,52,24,.06); }
+.ops-card .label { color:#6B584B; font-size:.82rem; margin-bottom:.25rem; }
+.ops-card .value { color:#2C1F16; font-weight:750; font-size:1.55rem; }
+.ops-card .note { color:#735F50; font-size:.78rem; margin-top:.3rem; }
+.ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1rem; padding-bottom:.85rem; border-bottom:1px solid #EBD6C2; }
 .ops-dashboard-head h1 { margin:0; font-size:1.75rem; }
-.ops-dashboard-head span { color:#6A7B85; font-size:.88rem; white-space:nowrap; }
-.ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#EAF4F4; color:#1F6F78 !important; -webkit-text-fill-color:#1F6F78 !important; margin-right:.25rem; }
+.ops-dashboard-head span { color:#735F50; font-size:.88rem; white-space:nowrap; }
+.ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#FFF0DE; color:#963D00 !important; -webkit-text-fill-color:#963D00 !important; margin-right:.25rem; }
 .ops-badge.warn { background:#FFF1DB; color:#7A4800 !important; -webkit-text-fill-color:#7A4800 !important; }
 .ops-badge.danger { background:#FCE8E6; color:#8F2F28 !important; -webkit-text-fill-color:#8F2F28 !important; }
 .ops-badge.gray { background:#EDF0F2; color:#46565F !important; -webkit-text-fill-color:#46565F !important; }
-.ops-item { background:white; border:1px solid #E1E8EC; border-left:4px solid #1F6F78; border-radius:12px; padding:.8rem .9rem; margin:.45rem 0; }
+.ops-item { background:white; border:1px solid #EBD6C2; border-left:4px solid #FF8207; border-radius:12px; padding:.8rem .9rem; margin:.45rem 0; }
 .ops-item.warn { border-left-color:#E09F3E; }
 .ops-item.danger { border-left-color:#A33B32; }
-.review-comment { background:#F5F8F9; border:1px solid #DDE6EA; border-radius:10px; padding:.65rem .75rem; margin:.35rem 0; }
-.muted { color:#50656F !important; -webkit-text-fill-color:#50656F !important; font-size:.87rem; }
+.review-comment { background:#FFF8F0; border:1px solid #EBD6C2; border-radius:10px; padding:.65rem .75rem; margin:.35rem 0; }
+.muted { color:#665448 !important; -webkit-text-fill-color:#665448 !important; font-size:.87rem; }
 .compact p { margin:.15rem 0; }
-div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #D1DDE2; border-radius:14px; padding:.7rem .85rem; }
-[data-testid="stMetricLabel"] *, [data-testid="stMetricDelta"] * { color:#3C505A !important; -webkit-text-fill-color:#3C505A !important; }
-[data-testid="stMetricValue"] * { color:#17324D !important; -webkit-text-fill-color:#17324D !important; }
+div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #E4CCB6; border-radius:14px; padding:.7rem .85rem; }
+[data-testid="stMetricLabel"] *, [data-testid="stMetricDelta"] * { color:#5B493D !important; -webkit-text-fill-color:#5B493D !important; }
+[data-testid="stMetricValue"] * { color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; }
 /* iPhone/Safari dark mode must never turn action buttons black. */
 [data-testid="stMainBlockContainer"] div[data-testid="stButton"] button,
 [data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button,
@@ -141,11 +145,11 @@ div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #D
 [data-testid="stMainBlockContainer"] .stDownloadButton > button,
 [data-testid="stMainBlockContainer"] .stLinkButton > a {
   -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
-  background-color:#176B75 !important; background-image:none !important;
-  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important;
-  border:2px solid #0F5962 !important; border-radius:10px !important;
+  background-color:#FF8207 !important; background-image:none !important;
+  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
+  border:2px solid #B84B00 !important; border-radius:10px !important;
   font-weight:800 !important; opacity:1 !important;
-  box-shadow:0 2px 5px rgba(23,50,77,.18) !important;
+  box-shadow:0 2px 5px rgba(184,75,0,.20) !important;
 }
 [data-testid="stMainBlockContainer"] div[data-testid="stButton"] button *,
 [data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button *,
@@ -154,60 +158,60 @@ div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #D
 [data-testid="stMainBlockContainer"] .stButton > button *,
 [data-testid="stMainBlockContainer"] .stDownloadButton > button *,
 [data-testid="stMainBlockContainer"] .stLinkButton > a * {
-  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important; opacity:1 !important;
+  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; opacity:1 !important;
 }
 [data-testid="stMainBlockContainer"] div[data-testid="stButton"] button:hover,
 [data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button:hover,
 [data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button:hover,
 [data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a:hover {
-  background-color:#0F5962 !important; border-color:#0A464D !important;
+  background-color:#E96F00 !important; border-color:#963D00 !important;
 }
 [data-testid="stMainBlockContainer"] button:disabled,
 [data-testid="stMainBlockContainer"] button:disabled * {
-  background:#DDE5E8 !important; color:#3F535D !important; -webkit-text-fill-color:#3F535D !important;
-  border-color:#A5B6BE !important; opacity:1 !important;
+  background:#E9E0D8 !important; color:#51443B !important; -webkit-text-fill-color:#51443B !important;
+  border-color:#B9A99B !important; opacity:1 !important;
 }
 [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
 [data-baseweb="select"] > div, [data-testid="stNumberInput"] input,
 [data-testid="stDateInput"] input {
-  background:#FFFFFF !important; color:#20313D !important; -webkit-text-fill-color:#20313D !important;
-  border-color:#8EA5AF !important; caret-color:#20313D !important; opacity:1 !important;
+  background:#FFFFFF !important; color:#30251D !important; -webkit-text-fill-color:#30251D !important;
+  border-color:#B9A28F !important; caret-color:#30251D !important; opacity:1 !important;
 }
 input::placeholder, textarea::placeholder {
-  color:#647782 !important; -webkit-text-fill-color:#647782 !important; opacity:1 !important;
+  color:#786557 !important; -webkit-text-fill-color:#786557 !important; opacity:1 !important;
 }
 [data-baseweb="select"] *, [role="listbox"] *, [role="option"], [data-baseweb="popover"] * {
-  color:#20313D !important; -webkit-text-fill-color:#20313D !important;
+  color:#30251D !important; -webkit-text-fill-color:#30251D !important;
 }
 [role="listbox"], [data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="calendar"] {
-  background:#FFFFFF !important; color:#20313D !important;
+  background:#FFFFFF !important; color:#30251D !important;
 }
-[data-testid="stAlert"] { background:#E7F2FA !important; color:#20313D !important; border-color:#B7D3E4 !important; }
+[data-testid="stAlert"] { background:#FFF0DE !important; color:#30251D !important; border-color:#F0BE8D !important; }
 [data-testid="stAlert"] p, [data-testid="stAlert"] div, [data-testid="stAlert"] span {
-  color:#20313D !important; -webkit-text-fill-color:#20313D !important; opacity:1 !important;
+  color:#30251D !important; -webkit-text-fill-color:#30251D !important; opacity:1 !important;
 }
 [data-testid="stExpander"] details, [data-testid="stDataFrame"], [data-testid="stForm"] {
-  background:#FFFFFF !important; color:#20313D !important; border-color:#D1DDE2 !important;
+  background:#FFFFFF !important; color:#30251D !important; border-color:#E4CCB6 !important;
 }
 [data-testid="stExpander"] summary, [data-testid="stExpander"] summary * {
-  color:#20313D !important; -webkit-text-fill-color:#20313D !important; opacity:1 !important;
+  color:#30251D !important; -webkit-text-fill-color:#30251D !important; opacity:1 !important;
 }
 [data-testid="stForm"] p, [data-testid="stForm"] label, [data-testid="stForm"] span {
-  color:#2D404A !important; -webkit-text-fill-color:#2D404A !important;
+  color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important;
 }
 [data-testid="stMainBlockContainer"] .stCheckbox label *,
 [data-testid="stMainBlockContainer"] [data-testid="stToggle"] label *,
 [data-testid="stMainBlockContainer"] [role="radiogroup"] label * {
-  color:#2D404A !important; -webkit-text-fill-color:#2D404A !important; opacity:1 !important;
+  color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important; opacity:1 !important;
 }
 .stTabs [data-baseweb="tab-list"] { gap:.25rem; }
 .stTabs [data-baseweb="tab"] { border-radius:10px 10px 0 0; padding:.55rem .8rem; }
-.stTabs [data-baseweb="tab"] *, [role="tab"] { color:#445963 !important; }
-.stTabs [aria-selected="true"] * { color:#17324D !important; font-weight:700 !important; }
-code, pre { background:#EEF3F5 !important; color:#20313D !important; }
+.stTabs [data-baseweb="tab"] *, [role="tab"] { color:#655347 !important; }
+.stTabs [aria-selected="true"] * { color:#963D00 !important; font-weight:700 !important; }
+code, pre { background:#FFF3E7 !important; color:#30251D !important; }
 @media (prefers-color-scheme: dark) {
   html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
-    background:#F8FAFB !important; color:#20313D !important; color-scheme:light !important;
+    background:#FFFDF9 !important; color:#30251D !important; color-scheme:light !important;
   }
 }
 @media (max-width: 768px) {
@@ -429,7 +433,7 @@ def sidebar() -> str:
         st.markdown(f"## ⛪ {APP_TITLE}")
         st.caption("예배 운영 · 지식관리")
         st.markdown("---")
-        menu_items = ["대시보드", "교회력", "행사", "매뉴얼", "결정·운영로그", "참석 통계", "전체 검색", "보관함", "데이터·백업"]
+        menu_items = ["대시보드", "교회력", "행사", "매뉴얼", "결정·운영로그", "예배 인원 현황", "전체 검색", "보관함", "데이터·백업"]
         pending_nav = st.session_state.pop("_navigate_to", None)
         if pending_nav in menu_items:
             st.session_state["main_nav"] = pending_nav
@@ -1051,20 +1055,51 @@ def logs_page() -> None:
 
 
 def attendance_page() -> None:
-    hero("참석 통계", "실제 Spreadsheet 참석 기록을 기간·예배별로 분석합니다.")
+    hero("예배 인원 현황", "가장 최근 주일예배 인원과 기간별 변화를 확인합니다.")
     data = pd.DataFrame(rows("SELECT * FROM attendance ORDER BY service_date"))
     if data.empty:
-        st.info("참석 데이터가 없습니다.")
+        st.info("예배 인원 데이터가 없습니다.")
         return
     data["service_date"] = pd.to_datetime(data["service_date"])
     data["month"] = data["service_date"].dt.to_period("M").astype(str)
     missing_count = int((data["total_count"] <= 0).sum())
     analysis_data = data[data["total_count"] > 0].copy()
+
+    sunday_data = analysis_data[analysis_data["service_type"] == "주일예배"].sort_values("service_date", ascending=False)
+    st.subheader("최근 주일예배")
+    if sunday_data.empty:
+        st.info("집계가 완료된 주일예배 인원 기록이 없습니다.")
+    else:
+        latest_sunday = sunday_data.iloc[0]
+        previous_sunday = sunday_data.iloc[1] if len(sunday_data) > 1 else None
+        latest_total = int(latest_sunday["total_count"]) if pd.notna(latest_sunday["total_count"]) else 0
+        latest_offline = int(latest_sunday["offline_count"]) if pd.notna(latest_sunday["offline_count"]) else 0
+        latest_online = int(latest_sunday["online_count"]) if pd.notna(latest_sunday["online_count"]) else 0
+        total_delta = None
+        if previous_sunday is not None and pd.notna(previous_sunday["total_count"]):
+            total_delta = f"이전 주일 대비 {latest_total - int(previous_sunday['total_count']):+d}명"
+        st.caption(f"{latest_sunday['service_date'].strftime('%Y.%m.%d')} · 집계 완료")
+        latest_cols = st.columns(3)
+        latest_cols[0].metric("총 예배 인원", f"{latest_total}명", total_delta)
+        latest_cols[1].metric("현장 예배", f"{latest_offline}명")
+        latest_cols[2].metric("온라인 예배", f"{latest_online}명")
+
+        newer_unreported = data[
+            (data["service_type"] == "주일예배")
+            & (data["service_date"] > latest_sunday["service_date"])
+            & (data["total_count"] <= 0)
+        ].sort_values("service_date", ascending=False)
+        if not newer_unreported.empty:
+            pending_date = newer_unreported.iloc[0]["service_date"].strftime("%Y.%m.%d")
+            st.caption(f"{pending_date} 주일예배는 인원이 아직 입력되지 않아 최근 집계 완료 기록을 표시했습니다.")
+
+    st.subheader("기간별 인원 추이")
     min_date, max_date = data["service_date"].min().date(), data["service_date"].max().date()
     f1, f2 = st.columns([1.3, 1])
     period = f1.date_input("기간", value=(min_date, max_date), min_value=min_date, max_value=max_date)
     types = sorted(data["service_type"].dropna().unique().tolist())
-    chosen = f2.multiselect("예배 종류", types, default=types)
+    default_types = ["주일예배"] if "주일예배" in types else types[:1]
+    chosen = f2.multiselect("예배 종류", types, default=default_types)
     if isinstance(period, tuple) and len(period) == 2:
         filtered = analysis_data[(analysis_data["service_date"].dt.date >= period[0]) & (analysis_data["service_date"].dt.date <= period[1])]
     else:
@@ -1078,8 +1113,8 @@ def attendance_page() -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("평균 총인원", f"{filtered['total_count'].mean():.1f}명")
     c2.metric("평균 오프라인", f"{filtered['offline_count'].mean():.1f}명")
-    c3.metric("최고 참석", f"{int(filtered['total_count'].max())}명")
-    c4.metric("최저 참석", f"{int(filtered['total_count'].min())}명")
+    c3.metric("최고 인원", f"{int(filtered['total_count'].max())}명")
+    c4.metric("최저 인원", f"{int(filtered['total_count'].min())}명")
     monthly = filtered.groupby(["month", "service_type"], as_index=False).agg(평균_총인원=("total_count", "mean"), 기록수=("id", "count"))
     fig = px.line(monthly, x="month", y="평균_총인원", color="service_type", markers=True, labels={"month": "월", "service_type": "예배", "평균_총인원": "평균 인원"})
     fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), legend_title_text="", hovermode="x unified")
@@ -1095,7 +1130,7 @@ def attendance_page() -> None:
         st.dataframe(quality, hide_index=True, use_container_width=True)
         flagged = data[data["data_quality"] == "Needs Review"][["service_date", "service_type", "online_count", "offline_count", "total_count", "notes"]]
         if not flagged.empty:
-            st.warning(f"확인이 필요한 참석 기록 {len(flagged)}건")
+            st.warning(f"확인이 필요한 예배 인원 기록 {len(flagged)}건")
             st.dataframe(flagged, hide_index=True, use_container_width=True)
     st.caption("통계의 변화는 운영 이벤트와 함께 참고할 수 있지만, 자동으로 인과관계를 주장하지 않습니다.")
 
@@ -1295,7 +1330,7 @@ def main() -> None:
         "행사": events_page,
         "매뉴얼": manuals_page,
         "결정·운영로그": logs_page,
-        "참석 통계": attendance_page,
+        "예배 인원 현황": attendance_page,
         "전체 검색": search_page,
         "보관함": archive_page,
         "데이터·백업": data_page,
