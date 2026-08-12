@@ -27,6 +27,7 @@ from config import (
 from calendar_sync import sync_google_calendar
 from google_sheets_sync import sync_google_sheets
 from db import (
+    add_review_comment,
     add_decision,
     add_operation_log,
     add_reference_record,
@@ -35,6 +36,7 @@ from db import (
     archive_entity,
     carry_review_issue,
     clone_event,
+    create_review_item,
     create_event,
     create_event_template,
     create_manual,
@@ -59,15 +61,32 @@ st.set_page_config(page_title=APP_TITLE, page_icon="⛪", layout="wide", initial
 
 CSS = """
 <style>
-:root { --navy:#17324D; --teal:#1F6F78; --mint:#EAF4F4; --sand:#F5F1EA; --red:#A33B32; }
-.stApp { background:#F8FAFB; color:#20313D; }
+:root { --navy:#17324D; --teal:#1F6F78; --mint:#EAF4F4; --sand:#F5F1EA; --red:#A33B32; color-scheme:light !important; }
+html, body, .stApp { color-scheme:light !important; }
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
+  background:#F8FAFB !important; color:#20313D !important;
+}
+[data-testid="stHeader"] { background:rgba(248,250,251,.96) !important; }
+[data-testid="stToolbar"] button, [data-testid="stHeaderActionElements"] button { color:#17324D !important; }
 [data-testid="stSidebar"] { background:#17324D; }
 [data-testid="stSidebar"] * { color:#F4F8FA !important; }
 [data-testid="stSidebar"] input { color:#20313D !important; }
-h1,h2,h3 { color:#17324D; letter-spacing:-.02em; }
+h1,h2,h3,h4,h5,h6 { color:#17324D !important; letter-spacing:-.02em; }
+[data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] span,
+[data-testid="stMainBlockContainer"] label,
+[data-testid="stMainBlockContainer"] [data-testid="stCaptionContainer"],
+[data-testid="stMainBlockContainer"] [data-testid="stCaptionContainer"] p,
+[data-testid="stMainBlockContainer"] [data-testid="stWidgetLabel"] p,
+[data-testid="stMainBlockContainer"] [data-testid="stCheckbox"] p,
+[data-testid="stMainBlockContainer"] [data-testid="stToggle"] p {
+  color:#2D404A !important; -webkit-text-fill-color:#2D404A !important; opacity:1 !important;
+}
+a { color:#176B75; }
 .ops-hero { background:linear-gradient(120deg,#17324D,#1F6F78); color:white; border-radius:20px; padding:1.35rem 1.5rem; margin-bottom:1.1rem; box-shadow:0 10px 25px rgba(23,50,77,.12); }
-.ops-hero h1 { color:white; margin:0; font-size:1.85rem; }
-.ops-hero p { margin:.35rem 0 0; opacity:.85; }
+.ops-hero h1 { color:white !important; -webkit-text-fill-color:white !important; margin:0; font-size:1.85rem; }
+.ops-hero p { color:white !important; -webkit-text-fill-color:white !important; margin:.35rem 0 0; opacity:.92 !important; }
 .ops-card { background:white; border:1px solid #DDE6EA; border-radius:16px; padding:1rem 1.05rem; min-height:110px; box-shadow:0 3px 12px rgba(23,50,77,.04); }
 .ops-card .label { color:#647782; font-size:.82rem; margin-bottom:.25rem; }
 .ops-card .value { color:#17324D; font-weight:750; font-size:1.55rem; }
@@ -75,19 +94,97 @@ h1,h2,h3 { color:#17324D; letter-spacing:-.02em; }
 .ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1rem; padding-bottom:.85rem; border-bottom:1px solid #DDE6EA; }
 .ops-dashboard-head h1 { margin:0; font-size:1.75rem; }
 .ops-dashboard-head span { color:#6A7B85; font-size:.88rem; white-space:nowrap; }
-.ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#EAF4F4; color:#1F6F78; margin-right:.25rem; }
-.ops-badge.warn { background:#FFF1DB; color:#965B00; }
-.ops-badge.danger { background:#FCE8E6; color:#A33B32; }
-.ops-badge.gray { background:#EDF0F2; color:#5D6A72; }
+.ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#EAF4F4; color:#1F6F78 !important; -webkit-text-fill-color:#1F6F78 !important; margin-right:.25rem; }
+.ops-badge.warn { background:#FFF1DB; color:#7A4800 !important; -webkit-text-fill-color:#7A4800 !important; }
+.ops-badge.danger { background:#FCE8E6; color:#8F2F28 !important; -webkit-text-fill-color:#8F2F28 !important; }
+.ops-badge.gray { background:#EDF0F2; color:#46565F !important; -webkit-text-fill-color:#46565F !important; }
 .ops-item { background:white; border:1px solid #E1E8EC; border-left:4px solid #1F6F78; border-radius:12px; padding:.8rem .9rem; margin:.45rem 0; }
 .ops-item.warn { border-left-color:#E09F3E; }
 .ops-item.danger { border-left-color:#A33B32; }
-.muted { color:#6A7B85; font-size:.87rem; }
+.review-comment { background:#F5F8F9; border:1px solid #DDE6EA; border-radius:10px; padding:.65rem .75rem; margin:.35rem 0; }
+.muted { color:#50656F !important; -webkit-text-fill-color:#50656F !important; font-size:.87rem; }
 .compact p { margin:.15rem 0; }
-div[data-testid="stMetric"] { background:white; border:1px solid #DDE6EA; border-radius:14px; padding:.7rem .85rem; }
-.stButton>button { border-radius:10px; }
+div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #D1DDE2; border-radius:14px; padding:.7rem .85rem; }
+[data-testid="stMetricLabel"] *, [data-testid="stMetricDelta"] * { color:#3C505A !important; -webkit-text-fill-color:#3C505A !important; }
+[data-testid="stMetricValue"] * { color:#17324D !important; -webkit-text-fill-color:#17324D !important; }
+/* iPhone/Safari dark mode must never turn action buttons black. */
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button,
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button,
+[data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button,
+[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a,
+[data-testid="stMainBlockContainer"] .stButton > button,
+[data-testid="stMainBlockContainer"] .stDownloadButton > button,
+[data-testid="stMainBlockContainer"] .stLinkButton > a {
+  -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
+  background-color:#176B75 !important; background-image:none !important;
+  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important;
+  border:2px solid #0F5962 !important; border-radius:10px !important;
+  font-weight:800 !important; opacity:1 !important;
+  box-shadow:0 2px 5px rgba(23,50,77,.18) !important;
+}
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button *,
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button *,
+[data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button *,
+[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a *,
+[data-testid="stMainBlockContainer"] .stButton > button *,
+[data-testid="stMainBlockContainer"] .stDownloadButton > button *,
+[data-testid="stMainBlockContainer"] .stLinkButton > a * {
+  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important; opacity:1 !important;
+}
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button:hover,
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button:hover,
+[data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button:hover,
+[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a:hover {
+  background-color:#0F5962 !important; border-color:#0A464D !important;
+}
+[data-testid="stMainBlockContainer"] button:disabled,
+[data-testid="stMainBlockContainer"] button:disabled * {
+  background:#DDE5E8 !important; color:#3F535D !important; -webkit-text-fill-color:#3F535D !important;
+  border-color:#A5B6BE !important; opacity:1 !important;
+}
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
+[data-baseweb="select"] > div, [data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input {
+  background:#FFFFFF !important; color:#20313D !important; -webkit-text-fill-color:#20313D !important;
+  border-color:#8EA5AF !important; caret-color:#20313D !important; opacity:1 !important;
+}
+input::placeholder, textarea::placeholder {
+  color:#647782 !important; -webkit-text-fill-color:#647782 !important; opacity:1 !important;
+}
+[data-baseweb="select"] *, [role="listbox"] *, [role="option"], [data-baseweb="popover"] * {
+  color:#20313D !important; -webkit-text-fill-color:#20313D !important;
+}
+[role="listbox"], [data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="calendar"] {
+  background:#FFFFFF !important; color:#20313D !important;
+}
+[data-testid="stAlert"] { background:#E7F2FA !important; color:#20313D !important; border-color:#B7D3E4 !important; }
+[data-testid="stAlert"] p, [data-testid="stAlert"] div, [data-testid="stAlert"] span {
+  color:#20313D !important; -webkit-text-fill-color:#20313D !important; opacity:1 !important;
+}
+[data-testid="stExpander"] details, [data-testid="stDataFrame"], [data-testid="stForm"] {
+  background:#FFFFFF !important; color:#20313D !important; border-color:#D1DDE2 !important;
+}
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary * {
+  color:#20313D !important; -webkit-text-fill-color:#20313D !important; opacity:1 !important;
+}
+[data-testid="stForm"] p, [data-testid="stForm"] label, [data-testid="stForm"] span {
+  color:#2D404A !important; -webkit-text-fill-color:#2D404A !important;
+}
+[data-testid="stMainBlockContainer"] .stCheckbox label *,
+[data-testid="stMainBlockContainer"] [data-testid="stToggle"] label *,
+[data-testid="stMainBlockContainer"] [role="radiogroup"] label * {
+  color:#2D404A !important; -webkit-text-fill-color:#2D404A !important; opacity:1 !important;
+}
 .stTabs [data-baseweb="tab-list"] { gap:.25rem; }
 .stTabs [data-baseweb="tab"] { border-radius:10px 10px 0 0; padding:.55rem .8rem; }
+.stTabs [data-baseweb="tab"] *, [role="tab"] { color:#445963 !important; }
+.stTabs [aria-selected="true"] * { color:#17324D !important; font-weight:700 !important; }
+code, pre { background:#EEF3F5 !important; color:#20313D !important; }
+@media (prefers-color-scheme: dark) {
+  html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
+    background:#F8FAFB !important; color:#20313D !important; color-scheme:light !important;
+  }
+}
 @media (max-width: 768px) {
   .ops-hero { padding:1rem; border-radius:14px; }
   .ops-hero h1 { font-size:1.4rem; }
@@ -96,6 +193,7 @@ div[data-testid="stMetric"] { background:white; border:1px solid #DDE6EA; border
   [data-testid="stHorizontalBlock"] { gap:.35rem; }
   h1 { font-size:1.55rem !important; }
   h2 { font-size:1.3rem !important; }
+  .stButton>button, .stDownloadButton>button, .stLinkButton>a { min-height:3rem; font-size:1rem !important; }
 }
 </style>
 """
@@ -202,6 +300,103 @@ def status_ko(value: str) -> str:
         "TODO": "미완료", "IN_PROGRESS": "진행중", "DONE": "완료", "BLOCKED": "보류",
         "CURRENT": "현재 기준", "ARCHIVED": "보관됨", "SUPERSEDED": "이전 기준",
     }.get(value, value)
+
+
+REVIEW_STATUS_LABELS = {
+    "REVIEW_REQUIRED": "확인 필요",
+    "IN_PROGRESS": "진행중",
+    "CONFIRMED": "확인 완료",
+}
+
+
+def shared_review_board() -> None:
+    count_rows = rows(
+        "SELECT status,COUNT(*) AS count FROM review_items WHERE archived_at IS NULL GROUP BY status"
+    )
+    counts = {status: 0 for status in REVIEW_STATUS_LABELS}
+    counts.update({item["status"]: item["count"] for item in count_rows})
+    active_count = counts["REVIEW_REQUIRED"] + counts["IN_PROGRESS"]
+
+    title_col, add_col = st.columns([0.72, 0.28])
+    title_col.markdown(f"#### 팀 확인 게시판 · 미완료 {active_count}건")
+    if add_col.button("＋ 확인사항 추가", key="open_review_item_form", use_container_width=True):
+        st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
+
+    count_cols = st.columns(3)
+    for column, status in zip(count_cols, REVIEW_STATUS_LABELS):
+        column.metric(REVIEW_STATUS_LABELS[status], f"{counts[status]}건")
+
+    if st.session_state.get("show_review_item_form", False):
+        with st.form("new_review_item", clear_on_submit=True):
+            st.markdown("**새 확인사항 등록**")
+            new_title = st.text_input("제목", placeholder="무엇을 확인해야 하나요?")
+            new_description = st.text_area("내용", placeholder="상황과 확인할 내용을 적어주세요.")
+            new_author = st.text_input("작성자", placeholder="이름")
+            submitted = st.form_submit_button("등록", type="primary", use_container_width=True)
+            if submitted:
+                try:
+                    create_review_item(new_title, new_description, new_author)
+                    st.session_state["show_review_item_form"] = False
+                    rerun("새 확인사항을 등록했습니다.")
+                except ValueError as exc:
+                    st.error(str(exc))
+
+    show_confirmed = st.toggle("확인 완료 항목도 보기", value=False, key="show_confirmed_reviews")
+    status_filter = "" if show_confirmed else "AND review_items.status<>'CONFIRMED'"
+    review_items = rows(
+        "SELECT review_items.*,COUNT(review_comments.id) AS comment_count FROM review_items "
+        "LEFT JOIN review_comments ON review_comments.review_item_id=review_items.id AND review_comments.archived_at IS NULL "
+        f"WHERE review_items.archived_at IS NULL {status_filter} GROUP BY review_items.id "
+        "ORDER BY CASE review_items.status WHEN 'REVIEW_REQUIRED' THEN 0 WHEN 'IN_PROGRESS' THEN 1 ELSE 2 END,"
+        "review_items.updated_at DESC,review_items.id DESC LIMIT 30"
+    )
+    if not review_items:
+        st.info("등록된 미완료 확인사항이 없습니다. 필요한 내용이 있으면 ＋ 버튼으로 추가하세요.")
+        return
+
+    for item in review_items:
+        label = REVIEW_STATUS_LABELS[item["status"]]
+        with st.expander(f"[{label}] {item['title']} · 댓글 {item['comment_count']}개"):
+            if item["description"]:
+                st.write(item["description"])
+            st.caption(
+                f"등록 {item['created_by']} · {item['created_at'][:16]}"
+                + (f" · 최근 확인 {item['updated_by']}" if item["updated_by"] else "")
+            )
+            comments = rows(
+                "SELECT * FROM review_comments WHERE review_item_id=? AND archived_at IS NULL ORDER BY created_at,id",
+                (item["id"],),
+            )
+            for comment in comments:
+                with st.container(border=True):
+                    status_note = REVIEW_STATUS_LABELS.get(comment["status_change"], "")
+                    st.caption(
+                        f"{comment['author']} · {comment['created_at'][:16]}"
+                        + (f" · {status_note}" if status_note else "")
+                    )
+                    st.write(comment["body"])
+
+            with st.form(f"review_reply_{item['id']}", clear_on_submit=True):
+                reply_author = st.text_input("작성자", placeholder="이름", key=f"review_author_{item['id']}")
+                reply_body = st.text_area(
+                    "댓글 또는 답글",
+                    placeholder="확인한 내용이나 진행 상황을 남겨주세요.",
+                    key=f"review_body_{item['id']}",
+                )
+                statuses = list(REVIEW_STATUS_LABELS)
+                next_status = st.selectbox(
+                    "댓글 등록 후 상태",
+                    statuses,
+                    index=statuses.index(item["status"]),
+                    format_func=lambda value: REVIEW_STATUS_LABELS[value],
+                    key=f"review_status_{item['id']}",
+                )
+                if st.form_submit_button("댓글 등록", type="primary", use_container_width=True):
+                    try:
+                        add_review_comment(item["id"], reply_author, reply_body, next_status)
+                        rerun("댓글과 진행 상태를 반영했습니다.")
+                    except ValueError as exc:
+                        st.error(str(exc))
 
 
 def sidebar() -> str:
@@ -346,24 +541,26 @@ def dashboard_page() -> None:
 
     st.divider()
     st.subheader("확인 필요")
-    alert_cols = st.columns(4)
-    alerts = [
-        ("기한 지남", overdue_count, "danger"),
-        ("보류 업무", blocked_count, "warn"),
-        ("담당자 없는 중요업무", ownerless_high, "warn"),
-        ("재확인 운영로그", recheck_count, "warn"),
-    ]
-    for column, (label, count, tone) in zip(alert_cols, alerts):
-        column.markdown(
-            f'<div class="ops-card"><div class="label">{label}</div><div class="value">{count}건</div>'
-            f'<div class="note">{"확인 필요" if count else "이상 없음"}</div></div>',
-            unsafe_allow_html=True,
-        )
-    if needs_review:
-        note_col, button_col = st.columns([.82, .18])
-        note_col.caption(f"원본 이관 데이터 중 사람이 확인할 항목이 {needs_review}건 있습니다. 일상 운영과 분리해 데이터 관리 화면에서 검토합니다.")
-        if button_col.button("데이터 확인", use_container_width=True):
-            navigate("데이터·백업")
+    shared_review_board()
+    with st.expander("시스템 자동 점검 보기"):
+        alert_cols = st.columns(4)
+        alerts = [
+            ("기한 지남", overdue_count, "danger"),
+            ("보류 업무", blocked_count, "warn"),
+            ("담당자 없는 중요업무", ownerless_high, "warn"),
+            ("재확인 운영로그", recheck_count, "warn"),
+        ]
+        for column, (label, count, tone) in zip(alert_cols, alerts):
+            column.markdown(
+                f'<div class="ops-card"><div class="label">{label}</div><div class="value">{count}건</div>'
+                f'<div class="note">{"확인 필요" if count else "이상 없음"}</div></div>',
+                unsafe_allow_html=True,
+            )
+        if needs_review:
+            note_col, button_col = st.columns([.82, .18])
+            note_col.caption(f"원본 이관 데이터 중 사람이 확인할 항목이 {needs_review}건 있습니다. 데이터 관리 화면에서 검토합니다.")
+            if button_col.button("데이터 확인", use_container_width=True):
+                navigate("데이터·백업")
 
 
 def event_detail(event_id: int) -> None:
