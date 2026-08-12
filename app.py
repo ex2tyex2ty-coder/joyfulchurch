@@ -21,11 +21,13 @@ from config import (
     GOOGLE_CALENDAR_CREDENTIALS_PATH,
     GOOGLE_CALENDAR_TOKEN_PATH,
     IMPORT_REPORT_PATH,
+    REVIEW_BOARD_SPREADSHEET_ID,
     SOURCE_DIR,
     ensure_directories,
 )
 from calendar_sync import sync_google_calendar
 from google_sheets_sync import sync_google_sheets
+from google_review_board import GoogleReviewBoardStore, ReviewBoardConnectionError
 from db import (
     add_review_comment,
     add_decision,
@@ -338,18 +340,68 @@ REVIEW_STATUS_LABELS = {
 }
 
 
+@st.cache_resource(show_spinner=False)
+def _cached_review_board_store(credentials_json: str) -> GoogleReviewBoardStore:
+    service_account_info = json.loads(credentials_json)
+    return GoogleReviewBoardStore(REVIEW_BOARD_SPREADSHEET_ID, service_account_info)
+
+
+def review_board_store() -> tuple[GoogleReviewBoardStore | None, str]:
+    try:
+        raw_credentials = st.secrets["GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT"]
+    except (FileNotFoundError, KeyError):
+        return None, "게시판 영구 저장 연결정보가 아직 설정되지 않았습니다."
+    try:
+        if isinstance(raw_credentials, str):
+            credentials_json = raw_credentials
+        else:
+            credentials_json = json.dumps(dict(raw_credentials), ensure_ascii=False)
+        return _cached_review_board_store(credentials_json), ""
+    except (json.JSONDecodeError, TypeError, ReviewBoardConnectionError) as exc:
+        return None, str(exc)
+
+
 def shared_review_board() -> None:
-    count_rows = rows(
-        "SELECT status,COUNT(*) AS count FROM review_items WHERE archived_at IS NULL GROUP BY status"
-    )
-    counts = {status: 0 for status in REVIEW_STATUS_LABELS}
-    counts.update({item["status"]: item["count"] for item in count_rows})
+    store, connection_error = review_board_store()
+    if store is None:
+        st.markdown("#### 팀 확인 게시판")
+        st.error("Google Sheets 영구 저장소에 연결되지 않아 등록 기능을 잠시 중지했습니다.")
+        st.caption(connection_error)
+        return
+
+    show_confirmed = bool(st.session_state.get("show_confirmed_reviews", False))
+    try:
+        snapshot = store.snapshot(show_confirmed=show_confirmed)
+    except ReviewBoardConnectionError as exc:
+        st.markdown("#### 팀 확인 게시판")
+        st.error("Google Sheets 영구 저장소를 읽을 수 없어 등록 기능을 잠시 중지했습니다.")
+        st.caption(str(exc))
+        return
+
+    counts = {status: int(snapshot["counts"].get(status, 0)) for status in REVIEW_STATUS_LABELS}
     active_count = counts["REVIEW_REQUIRED"] + counts["IN_PROGRESS"]
 
-    title_col, add_col = st.columns([0.72, 0.28])
+    title_col, backup_col, add_col = st.columns([0.52, 0.20, 0.28])
     title_col.markdown(f"#### 팀 확인 게시판 · 미완료 {active_count}건")
+    backup_payload = json.dumps(
+        {
+            "spreadsheet_id": REVIEW_BOARD_SPREADSHEET_ID,
+            "items": snapshot["raw_items"],
+            "comments": snapshot["raw_comments"],
+        },
+        ensure_ascii=False,
+        indent=2,
+    ).encode("utf-8")
+    backup_col.download_button(
+        "백업 다운로드",
+        backup_payload,
+        file_name=f"joyful_review_board_{date.today().isoformat()}.json",
+        mime="application/json",
+        use_container_width=True,
+    )
     if add_col.button("＋ 확인사항 추가", key="open_review_item_form", use_container_width=True):
         st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
+    st.caption("게시글·댓글·진행 상태는 게시판 전용 Google Sheets에 영구 저장됩니다.")
 
     count_cols = st.columns(3)
     for column, status in zip(count_cols, REVIEW_STATUS_LABELS):
@@ -364,21 +416,14 @@ def shared_review_board() -> None:
             submitted = st.form_submit_button("등록", type="primary", use_container_width=True)
             if submitted:
                 try:
-                    create_review_item(new_title, new_description, new_author)
+                    store.create_item(new_title, new_description, new_author)
                     st.session_state["show_review_item_form"] = False
                     rerun("새 확인사항을 등록했습니다.")
-                except ValueError as exc:
+                except (ValueError, ReviewBoardConnectionError) as exc:
                     st.error(str(exc))
 
     show_confirmed = st.toggle("확인 완료 항목도 보기", value=False, key="show_confirmed_reviews")
-    status_filter = "" if show_confirmed else "AND review_items.status<>'CONFIRMED'"
-    review_items = rows(
-        "SELECT review_items.*,COUNT(review_comments.id) AS comment_count FROM review_items "
-        "LEFT JOIN review_comments ON review_comments.review_item_id=review_items.id AND review_comments.archived_at IS NULL "
-        f"WHERE review_items.archived_at IS NULL {status_filter} GROUP BY review_items.id "
-        "ORDER BY CASE review_items.status WHEN 'REVIEW_REQUIRED' THEN 0 WHEN 'IN_PROGRESS' THEN 1 ELSE 2 END,"
-        "review_items.updated_at DESC,review_items.id DESC LIMIT 30"
-    )
+    review_items = snapshot["items"]
     if not review_items:
         st.info("등록된 미완료 확인사항이 없습니다. 필요한 내용이 있으면 ＋ 버튼으로 추가하세요.")
         return
@@ -392,10 +437,7 @@ def shared_review_board() -> None:
                 f"등록 {item['created_by']} · {item['created_at'][:16]}"
                 + (f" · 최근 확인 {item['updated_by']}" if item["updated_by"] else "")
             )
-            comments = rows(
-                "SELECT * FROM review_comments WHERE review_item_id=? AND archived_at IS NULL ORDER BY created_at,id",
-                (item["id"],),
-            )
+            comments = snapshot["comments"].get(str(item["id"]), [])
             for comment in comments:
                 with st.container(border=True):
                     status_note = REVIEW_STATUS_LABELS.get(comment["status_change"], "")
@@ -422,9 +464,9 @@ def shared_review_board() -> None:
                 )
                 if st.form_submit_button("댓글 등록", type="primary", use_container_width=True):
                     try:
-                        add_review_comment(item["id"], reply_author, reply_body, next_status)
+                        store.add_comment(str(item["id"]), reply_author, reply_body, next_status)
                         rerun("댓글과 진행 상태를 반영했습니다.")
-                    except ValueError as exc:
+                    except (ValueError, ReviewBoardConnectionError) as exc:
                         st.error(str(exc))
 
 

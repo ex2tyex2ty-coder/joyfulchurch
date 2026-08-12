@@ -12,6 +12,7 @@ DB_PATH = DATA_DIR / "joyful_worship_ops.db"
 IMPORT_REPORT_PATH = DATA_DIR / "import_report.json"
 GOOGLE_CALENDAR_CREDENTIALS_PATH = DATA_DIR / "google_calendar_credentials.json"
 GOOGLE_CALENDAR_TOKEN_PATH = DATA_DIR / "google_calendar_token.json"
+REVIEW_BOARD_SPREADSHEET_ID = "1GX6xFwqvGXrD-ipKXReO67ITQas1bRXKGvAEV2o7d50"
 
 GOOGLE_SHEETS = (
     {
