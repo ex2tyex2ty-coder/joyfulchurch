@@ -71,6 +71,31 @@ html, body, .stApp { color-scheme:light !important; }
 [data-testid="stSidebar"] { background:#17324D; }
 [data-testid="stSidebar"] * { color:#F4F8FA !important; }
 [data-testid="stSidebar"] input { color:#20313D !important; }
+/* Keep the sidebar open/close control visible in System and Dark modes. */
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="collapsedControl"] button,
+button[data-testid="stExpandSidebarButton"],
+button[data-testid="stBaseButton-headerNoPadding"] {
+  -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
+  background:#176B75 !important; background-image:none !important;
+  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important;
+  border:2px solid #FFFFFF !important; border-radius:999px !important;
+  width:2.65rem !important; height:2.65rem !important; min-width:2.65rem !important;
+  opacity:1 !important; box-shadow:0 2px 8px rgba(0,0,0,.28) !important;
+}
+[data-testid="stSidebarCollapseButton"] button *,
+[data-testid="stSidebarCollapsedControl"] button *,
+[data-testid="collapsedControl"] button *,
+button[data-testid="stExpandSidebarButton"] *,
+button[data-testid="stBaseButton-headerNoPadding"] * {
+  color:#FFFFFF !important; -webkit-text-fill-color:#FFFFFF !important;
+  fill:#FFFFFF !important; stroke:#FFFFFF !important; opacity:1 !important;
+}
+[data-testid="stSidebarCollapseButton"] svg,
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="collapsedControl"] svg,
+button[data-testid="stExpandSidebarButton"] svg { fill:#FFFFFF !important; color:#FFFFFF !important; }
 h1,h2,h3,h4,h5,h6 { color:#17324D !important; letter-spacing:-.02em; }
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] li,
