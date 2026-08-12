@@ -30,7 +30,6 @@ from config import (
 )
 from calendar_sync import sync_google_calendar_service_account
 from bible_lookup import (
-    BibleLookupError,
     BibleReference,
     BibleVerse,
     LocalBible,
@@ -1801,7 +1800,7 @@ def bible_page() -> None:
                 for reference in references:
                     try:
                         verses.append(fetch_local_bible_verse(local_bible, reference, bible_label))
-                    except BibleLookupError as exc:
+                    except RuntimeError as exc:
                         errors.append((reference, str(exc)))
 
         st.session_state["bible_lookup_result"] = {
