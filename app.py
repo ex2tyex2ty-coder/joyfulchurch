@@ -21,6 +21,7 @@ if str(APP_DIR) not in sys.path:
 from config import (
     APP_TITLE,
     APP_VERSION,
+    BIBLE_TEXT_PATH,
     DB_PATH,
     GOOGLE_SHEETS_CACHE_DIR,
     IMPORT_REPORT_PATH,
@@ -1732,12 +1733,15 @@ def bible_page() -> None:
     bible_label = preferred_bible_id or "번역본 미선택"
     bible_list_error = ""
     local_bible: LocalBible | None = None
-    local_source = st.file_uploader(
-        "성경 전체 본문 TXT",
-        type=["txt"],
-        help="‘창1:1 본문’ 형식의 성경 전체 파일입니다. 10MB 이하 파일을 현재 화면에서만 읽고 저장하지 않습니다.",
-        key="bible_corpus_upload",
-    )
+    local_source = None
+    with st.expander("성경 전체 본문 교체"):
+        st.caption("기본 저장된 성경 대신 다른 전체 본문을 이번 접속에서만 사용할 때 선택합니다.")
+        local_source = st.file_uploader(
+            "다른 성경 전체 본문 TXT",
+            type=["txt"],
+            help="‘창1:1 본문’ 형식의 10MB 이하 파일입니다. 기본 저장 파일을 변경하지 않습니다.",
+            key="bible_corpus_upload",
+        )
     if local_source is not None:
         local_bytes = local_source.getvalue()
         if len(local_bytes) > 10 * 1024 * 1024:
@@ -1759,8 +1763,16 @@ def bible_page() -> None:
             except ValueError as exc:
                 st.error(str(exc))
 
+    if local_bible is None and BIBLE_TEXT_PATH.exists():
+        try:
+            local_bible = _cached_local_bible(BIBLE_TEXT_PATH.read_bytes())
+            bible_label = "개역개정판"
+            st.success(f"기본 성경 · {local_bible.book_count}권 {len(local_bible.verses):,}절 연결됨")
+        except (OSError, ValueError) as exc:
+            st.warning(f"저장된 성경 전체 본문을 읽지 못했습니다: {exc}")
+
     if local_bible is not None:
-        st.caption("이번 검색은 업로드한 성경 전체 본문 TXT를 우선 사용합니다.")
+        st.caption("연결된 성경 전체 본문을 기준으로 검색합니다.")
     elif api_key:
         try:
             korean_bibles = _cached_korean_bibles(api_key)
