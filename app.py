@@ -469,9 +469,7 @@ def shared_review_board() -> None:
 
     title_col, action_col = st.columns([0.62, 0.38])
     title_col.markdown(f"#### 팀 확인 게시판 · 미완료 {active_count}건")
-    if action_col.button("＋ 확인사항 추가", key="open_review_item_form", type="primary", width="stretch"):
-        st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
-    if st.button("↻ 게시판 새로고침", key="refresh_review_board", width="stretch"):
+    if action_col.button("↻ 새로고침", key="refresh_review_board", width="stretch"):
         _cached_review_board_snapshot.clear()
         st.rerun()
     st.caption("게시글·댓글·진행 상태는 게시판 전용 Google Sheets에 영구 저장됩니다.")
@@ -486,45 +484,6 @@ def shared_review_board() -> None:
     for column, (label, value) in zip(count_cols, metrics):
         column.metric(label, f"{value}건")
 
-    if st.session_state.get("show_review_item_form", False):
-        with st.form("new_review_item", clear_on_submit=True, border=True):
-            st.markdown("**새 확인사항 등록**")
-            new_title = st.text_input("제목", placeholder="무엇을 확인해야 하나요?")
-            new_description = st.text_area("내용", placeholder="상황과 확인할 내용을 적어주세요.")
-            classify_col, priority_col = st.columns(2)
-            new_category = classify_col.selectbox("분류", REVIEW_CATEGORIES)
-            new_priority = priority_col.selectbox(
-                "중요도",
-                list(REVIEW_PRIORITY_LABELS),
-                format_func=lambda value: REVIEW_PRIORITY_LABELS[value],
-            )
-            owner_col, due_col = st.columns(2)
-            new_owner = owner_col.text_input("담당자", placeholder="미정이면 비워두세요")
-            new_due = due_col.date_input("확인 기한", value=None)
-            new_author = st.text_input(
-                "작성자",
-                value=st.session_state.get("operator_name", ""),
-                placeholder="이름",
-            )
-            submitted = st.form_submit_button("등록", type="primary", width="stretch")
-            if submitted:
-                try:
-                    store.create_item(
-                        new_title,
-                        new_description,
-                        new_author,
-                        new_category,
-                        new_priority,
-                        new_owner,
-                        new_due.isoformat() if new_due else "",
-                    )
-                    _cached_review_board_snapshot.clear()
-                    st.session_state["show_review_item_form"] = False
-                    rerun("새 확인사항을 등록했습니다.")
-                except (ValueError, ReviewBoardConnectionError) as exc:
-                    st.error(str(exc))
-
-    filter_col, category_col, priority_col = st.columns(3)
     status_options = {
         "미완료 전체": "OPEN",
         "확인 필요": "REVIEW_REQUIRED",
@@ -532,17 +491,20 @@ def shared_review_board() -> None:
         "확인 완료": "CONFIRMED",
         "전체 상태": "ALL",
     }
-    selected_status_label = filter_col.selectbox("상태", list(status_options), key="review_status_filter")
     existing_categories = sorted({str(item.get("category") or "기타") for item in snapshot["items"]})
     category_options = ["전체", *dict.fromkeys([*REVIEW_CATEGORIES, *existing_categories])]
-    selected_category = category_col.selectbox("분류", category_options, key="review_category_filter")
     priority_options = {"전체 중요도": "ALL", "긴급": "URGENT", "중요": "HIGH", "일반": "NORMAL"}
-    selected_priority_label = priority_col.selectbox("중요도", list(priority_options), key="review_priority_filter")
-    board_search = st.text_input(
-        "게시판 검색",
-        placeholder="제목, 내용, 담당자, 작성자 검색",
-        key="review_board_search",
-    )
+    with st.expander("검색·필터", expanded=False):
+        filter_col, category_col, priority_col = st.columns(3)
+        selected_status_label = filter_col.selectbox("상태", list(status_options), key="review_status_filter")
+        selected_category = category_col.selectbox("분류", category_options, key="review_category_filter")
+        selected_priority_label = priority_col.selectbox("중요도", list(priority_options), key="review_priority_filter")
+        board_search = st.text_input(
+            "게시판 검색",
+            placeholder="제목, 내용, 담당자, 작성자 검색",
+            key="review_board_search",
+        )
+        display_limit = st.selectbox("한 번에 보기", [10, 25, 50], index=1, key="review_display_limit")
     review_items = filter_review_items(
         snapshot["items"],
         status_filter=status_options[selected_status_label],
@@ -565,11 +527,10 @@ def shared_review_board() -> None:
         )
     )
     total_filtered_items = len(review_items)
-    display_limit = st.selectbox("한 번에 보기", [10, 25, 50], index=1, key="review_display_limit")
     review_items = review_items[:display_limit]
-    st.caption(f"조건에 맞는 확인사항 {total_filtered_items}건 · 현재 {len(review_items)}건 표시")
+    st.markdown(f"**조건에 맞는 확인사항 {total_filtered_items}건 · 현재 {len(review_items)}건 표시**")
     if not review_items:
-        st.info("조건에 맞는 확인사항이 없습니다. 필터를 바꾸거나 새 항목을 추가하세요.")
+        st.info("조건에 맞는 확인사항이 없습니다. 검색·필터를 바꾸거나 아래에서 새 항목을 추가하세요.")
 
     for item in review_items:
         label = REVIEW_STATUS_LABELS[item["status"]]
@@ -656,6 +617,48 @@ def shared_review_board() -> None:
                         rerun("댓글과 진행 상태를 반영했습니다.")
                     except (ValueError, ReviewBoardConnectionError) as exc:
                         st.error(str(exc))
+
+    st.divider()
+    if st.button("＋ 새 확인사항 작성", key="open_review_item_form", type="primary", width="stretch"):
+        st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
+
+    if st.session_state.get("show_review_item_form", False):
+        with st.form("new_review_item", clear_on_submit=True, border=True):
+            st.markdown("**새 확인사항 등록**")
+            new_title = st.text_input("제목", placeholder="무엇을 확인해야 하나요?")
+            new_description = st.text_area("내용", placeholder="상황과 확인할 내용을 적어주세요.")
+            classify_col, priority_col = st.columns(2)
+            new_category = classify_col.selectbox("분류", REVIEW_CATEGORIES)
+            new_priority = priority_col.selectbox(
+                "중요도",
+                list(REVIEW_PRIORITY_LABELS),
+                format_func=lambda value: REVIEW_PRIORITY_LABELS[value],
+            )
+            owner_col, due_col = st.columns(2)
+            new_owner = owner_col.text_input("담당자", placeholder="미정이면 비워두세요")
+            new_due = due_col.date_input("확인 기한", value=None)
+            new_author = st.text_input(
+                "작성자",
+                value=st.session_state.get("operator_name", ""),
+                placeholder="이름",
+            )
+            submitted = st.form_submit_button("등록", type="primary", width="stretch")
+            if submitted:
+                try:
+                    store.create_item(
+                        new_title,
+                        new_description,
+                        new_author,
+                        new_category,
+                        new_priority,
+                        new_owner,
+                        new_due.isoformat() if new_due else "",
+                    )
+                    _cached_review_board_snapshot.clear()
+                    st.session_state["show_review_item_form"] = False
+                    rerun("새 확인사항을 등록했습니다.")
+                except (ValueError, ReviewBoardConnectionError) as exc:
+                    st.error(str(exc))
 
     with st.expander("게시판 데이터 관리"):
         st.caption("백업에는 게시글·댓글·상태 변경이력이 포함됩니다.")
@@ -765,6 +768,26 @@ def review_board_summary() -> None:
     ) + "</div>"
     st.markdown(summary_html, unsafe_allow_html=True)
 
+    review_required_items = [item for item in items if item.get("status") == "REVIEW_REQUIRED"]
+    review_required_items.sort(
+        key=lambda item: (
+            0 if item.get("priority") == "URGENT" else (1 if item.get("priority") == "HIGH" else 2),
+            str(item.get("due_date") or "9999-12-31"),
+            str(item.get("updated_at") or item.get("created_at") or ""),
+        )
+    )
+    review_required_count = len(review_required_items)
+    if review_required_count:
+        if st.button(
+            f"확인 필요 {review_required_count}건 바로 확인",
+            key="open_required_review_items",
+            type="primary",
+            width="stretch",
+        ):
+            st.session_state["review_status_filter"] = "확인 필요"
+            st.session_state["expanded_review_item"] = str(review_required_items[0]["id"])
+            navigate("팀 확인")
+
     urgent = [item for item in items if item.get("status") != "CONFIRMED" and item.get("priority") in {"URGENT", "HIGH"}]
     urgent.sort(
         key=lambda item: (
@@ -778,7 +801,7 @@ def review_board_summary() -> None:
         st.markdown(f"**{item['title']}**  \n{meta}")
     if not urgent:
         st.caption("긴급·중요 확인사항이 없습니다.")
-    if st.button("전체 게시판 보기", key="open_full_review_board", width="stretch"):
+    if st.button("팀 확인 게시판 전체 보기", key="open_full_review_board", width="stretch"):
         navigate("팀 확인")
 
 
