@@ -161,6 +161,8 @@ a { color:#AD4700; }
 .ops-attendance .total { color:#2C1F16; font-size:2.2rem; font-weight:900; line-height:1.15; margin:.35rem 0 .6rem; letter-spacing:-.03em; }
 .ops-attendance .chips { display:flex; flex-wrap:wrap; gap:.4rem; }
 .ops-chip { display:inline-block; background:#FFF0DE; color:#6B2C00 !important; border-radius:999px; padding:.32rem .7rem; font-size:.84rem; font-weight:700; border:1px solid #F0CEAB; }
+.st-key-dashboard_attendance_summary button { min-height:3.15rem !important; justify-content:flex-start !important; text-align:left !important; padding:.7rem .9rem !important; line-height:1.35 !important; }
+.st-key-dashboard_attendance_summary button p { text-align:left !important; }
 .ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1.1rem; padding-bottom:.9rem; border-bottom:2px solid #EBD6C2; }
 .ops-dashboard-head h1 { margin:0; font-size:1.8rem; font-weight:900; letter-spacing:-.03em; }
 .ops-dashboard-head span { color:#735F50; font-size:.88rem; white-space:nowrap; background:#F5EDE3; padding:.25rem .6rem; border-radius:999px; font-weight:600; }
@@ -440,6 +442,183 @@ def dday(event_date: str | None) -> str:
 def next_weekday(base_date: date, weekday: int) -> date:
     """Return today when it is the requested weekday, otherwise the next occurrence."""
     return base_date + timedelta(days=(weekday - base_date.weekday()) % 7)
+
+
+ATTENDANCE_COUNTED_STATUSES = {"COUNTED", "ESTIMATED", "NO_STREAM"}
+ATTENDANCE_CANCELLED_STATUSES = {"CANCELLED"}
+ATTENDANCE_STATUS_LABELS = {
+    "COUNTED": "집계 완료",
+    "PENDING": "미입력",
+    "CANCELLED": "예배 취소",
+    "NO_STREAM": "온라인 송출 없음",
+    "ESTIMATED": "추정 집계",
+    "UNKNOWN": "확인 필요",
+}
+
+
+def _attendance_frame() -> pd.DataFrame:
+    """Load attendance while remaining compatible with databases created before record_status."""
+    data = pd.DataFrame(rows("SELECT * FROM attendance ORDER BY service_date"))
+    if data.empty or "service_date" not in data.columns:
+        return data
+    data["service_date"] = pd.to_datetime(data["service_date"], errors="coerce").dt.normalize()
+    data = data[data["service_date"].notna()].copy()
+    for column in ("online_count", "offline_count", "total_count"):
+        if column not in data.columns:
+            data[column] = pd.NA
+        data[column] = pd.to_numeric(data[column], errors="coerce")
+
+    has_legacy_count = (
+        data[["online_count", "offline_count", "total_count"]].fillna(0).gt(0).any(axis=1)
+    )
+    if "record_status" in data.columns:
+        status = data["record_status"].fillna("").astype(str).str.strip().str.upper()
+        status = status.replace({
+            "COMPLETED": "COUNTED", "VERIFIED": "COUNTED", "집계완료": "COUNTED",
+            "MISSING": "PENDING", "미입력": "PENDING", "취소": "CANCELLED",
+            "REVIEW_REQUIRED": "UNKNOWN", "확인필요": "UNKNOWN",
+        })
+        supported_statuses = {
+            "COUNTED", "PENDING", "CANCELLED", "NO_STREAM", "ESTIMATED", "UNKNOWN",
+        }
+        # Preserve an explicit UNKNOWN (including an explicit zero count). Only blank or
+        # unsupported status values need the legacy count-based inference below.
+        infer_status = ~status.isin(supported_statuses)
+    else:
+        status = pd.Series("UNKNOWN", index=data.index, dtype="object")
+        infer_status = pd.Series(True, index=data.index, dtype="bool")
+    # Old imports represented blank cells as zero and had no status. Infer only records
+    # whose status is genuinely absent/unsupported; explicit UNKNOWN remains UNKNOWN.
+    status = status.where(~(infer_status & has_legacy_count), "COUNTED")
+    status = status.where(~(infer_status & ~has_legacy_count), "PENDING")
+    data["_record_status"] = status
+    data["_counted"] = status.isin(ATTENDANCE_COUNTED_STATUSES)
+    data["_cancelled"] = status.isin(ATTENDANCE_CANCELLED_STATUSES)
+    return data
+
+
+def _last_elapsed_sunday(base_date: date | None = None) -> date:
+    """Return the most recent Sunday that has fully elapsed."""
+    base_date = base_date or date.today()
+    days_since_sunday = (base_date.weekday() - 6) % 7
+    if days_since_sunday == 0:
+        days_since_sunday = 7
+    return base_date - timedelta(days=days_since_sunday)
+
+
+def _sunday_attendance_snapshot(data: pd.DataFrame | None = None) -> dict[str, object]:
+    data = _attendance_frame() if data is None else data
+    if data.empty:
+        return {"latest": None, "missing_dates": [], "recorded_pending_dates": [], "absent_dates": []}
+    sunday = data[data["service_type"] == "주일예배"].copy()
+    counted = sunday[sunday["_counted"]].sort_values("service_date", ascending=False)
+    latest = counted.iloc[0] if not counted.empty else None
+    latest_date = latest["service_date"].date() if latest is not None else None
+    last_elapsed = _last_elapsed_sunday()
+    start_date = latest_date + timedelta(days=7) if latest_date else last_elapsed
+    scheduled_dates = []
+    cursor = start_date
+    while cursor <= last_elapsed:
+        scheduled_dates.append(cursor)
+        cursor += timedelta(days=7)
+
+    missing_dates: list[date] = []
+    recorded_pending_dates: list[date] = []
+    absent_dates: list[date] = []
+    for scheduled_date in scheduled_dates:
+        same_date = sunday[sunday["service_date"].dt.date == scheduled_date]
+        if not same_date.empty and (same_date["_cancelled"].any() or same_date["_counted"].any()):
+            continue
+        missing_dates.append(scheduled_date)
+        if same_date.empty:
+            absent_dates.append(scheduled_date)
+        else:
+            recorded_pending_dates.append(scheduled_date)
+    return {
+        "latest": latest,
+        "missing_dates": missing_dates,
+        "recorded_pending_dates": recorded_pending_dates,
+        "absent_dates": absent_dates,
+    }
+
+
+def _scheduled_sunday_trend(sunday: pd.DataFrame, count_limit: int | None) -> pd.DataFrame:
+    """Build a calendar-continuous series so missing Sundays render as chart gaps."""
+    last_elapsed = _last_elapsed_sunday()
+    counted = sunday[sunday["_counted"]]
+    if not counted.empty:
+        latest_counted_date = counted["service_date"].max().date()
+        if latest_counted_date <= date.today():
+            last_elapsed = max(last_elapsed, latest_counted_date)
+    if count_limit is None:
+        first_date = sunday["service_date"].min().date() if not sunday.empty else last_elapsed
+        first_date += timedelta(days=(6 - first_date.weekday()) % 7)
+    else:
+        first_date = last_elapsed - timedelta(days=7 * (count_limit - 1))
+
+    scheduled = []
+    cursor = first_date
+    while cursor <= last_elapsed:
+        same_date = sunday[sunday["service_date"].dt.date == cursor]
+        chosen = None
+        status = "행 없음"
+        if not same_date.empty:
+            counted_rows = same_date[same_date["_counted"]]
+            if not counted_rows.empty:
+                chosen = counted_rows.iloc[-1]
+                status = ATTENDANCE_STATUS_LABELS.get(str(chosen["_record_status"]), str(chosen["_record_status"]))
+            elif same_date["_cancelled"].any():
+                status = "예배 취소"
+            else:
+                chosen = same_date.iloc[-1]
+                status = ATTENDANCE_STATUS_LABELS.get(str(chosen["_record_status"]), "확인 필요")
+        is_counted = chosen is not None and bool(chosen["_counted"])
+        online_value = chosen["online_count"] if is_counted else pd.NA
+        if chosen is not None and str(chosen["_record_status"]) == "NO_STREAM":
+            online_value = pd.NA
+        scheduled.append({
+            "service_date": pd.Timestamp(cursor),
+            "offline_count": chosen["offline_count"] if is_counted else pd.NA,
+            "online_count": online_value,
+            "total_count": chosen["total_count"] if is_counted else pd.NA,
+            "record_status_label": status,
+        })
+        cursor += timedelta(days=7)
+    return pd.DataFrame(scheduled)
+
+
+def _linked_event_onsite_attendance(event: dict[str, object]) -> float | None:
+    """Return the representative onsite count for an event's canonical service.
+
+    A service may have multiple events, so service_id is authoritative. event_id is
+    retained only as a compatibility fallback for older, unlinked event records.
+    """
+    service_id = event.get("service_id")
+    if service_id is not None:
+        linked = row(
+            "SELECT offline_count FROM attendance "
+            "WHERE service_id=? AND record_status IN ('COUNTED','ESTIMATED','NO_STREAM') "
+            "AND offline_count IS NOT NULL "
+            "ORDER BY CASE record_status WHEN 'COUNTED' THEN 0 WHEN 'ESTIMATED' THEN 1 ELSE 2 END,id DESC LIMIT 1",
+            (service_id,),
+        )
+    else:
+        linked = row(
+            "SELECT offline_count FROM attendance "
+            "WHERE event_id=? AND record_status IN ('COUNTED','ESTIMATED','NO_STREAM') "
+            "AND offline_count IS NOT NULL "
+            "ORDER BY CASE record_status WHEN 'COUNTED' THEN 0 WHEN 'ESTIMATED' THEN 1 ELSE 2 END,id DESC LIMIT 1",
+            (event.get("id"),),
+        )
+    if not linked or linked["offline_count"] is None:
+        return None
+    return float(linked["offline_count"])
+
+
+def _format_onsite_attendance(value: float | None) -> str:
+    if value is None:
+        return "없음"
+    return f"{int(value)}명" if float(value).is_integer() else f"{value:.1f}명"
 
 
 def status_ko(value: str) -> str:
@@ -942,6 +1121,30 @@ def dashboard_page() -> None:
     ) + "</div>"
     st.markdown(worship_html, unsafe_allow_html=True)
 
+    attendance_snapshot = _sunday_attendance_snapshot()
+    latest_attendance = attendance_snapshot["latest"]
+    missing_attendance_dates = attendance_snapshot["missing_dates"]
+    if latest_attendance is not None:
+        latest_attendance_date = latest_attendance["service_date"].strftime("%m.%d")
+        latest_onsite = int(latest_attendance["offline_count"]) if pd.notna(latest_attendance["offline_count"]) else 0
+        latest_online = int(latest_attendance["online_count"]) if pd.notna(latest_attendance["online_count"]) else 0
+        latest_online_label = "송출 없음" if str(latest_attendance["_record_status"]) == "NO_STREAM" else str(latest_online)
+        if missing_attendance_dates:
+            attendance_label = (
+                f"⚠ 주일 자료 {len(missing_attendance_dates)}회 미확인 · "
+                f"최근 {latest_attendance_date} 현장 {latest_onsite}명 · 온라인 {latest_online_label} · 확인하기"
+            )
+        else:
+            attendance_label = (
+                f"주일 {latest_attendance_date} · 현장 {latest_onsite}명 · "
+                f"온라인 {latest_online_label} · 예배 인원 보기"
+            )
+    else:
+        attendance_label = "⚠ 집계 완료된 주일예배 자료가 없습니다 · 확인하기"
+    with st.container(key="dashboard_attendance_summary"):
+        if st.button(attendance_label, key="dashboard_attendance_open", width="stretch"):
+            navigate("예배 인원 현황")
+
     st.markdown("#### 자주 쓰는 메뉴")
     quick_manual_rows = rows(
         "SELECT id,source_sheet FROM manuals WHERE status='CURRENT' AND archived_at IS NULL "
@@ -1133,13 +1336,13 @@ def event_detail(event_id: int) -> None:
         else:
             st.markdown(f"### 이전 행사: {previous['title']}")
             prev_ready = readiness(previous["id"])
-            curr_att = row("SELECT AVG(total_count) AS avg FROM attendance WHERE event_id=?", (event_id,))["avg"]
-            prev_att = row("SELECT AVG(total_count) AS avg FROM attendance WHERE event_id=?", (previous["id"],))["avg"]
+            curr_att = _linked_event_onsite_attendance(event)
+            prev_att = _linked_event_onsite_attendance(previous)
             comparison = pd.DataFrame([
                 {"항목": "행사일", "이전": previous["event_date"], "현재": event["event_date"]},
                 {"항목": "체크리스트 수", "이전": prev_ready["total"], "현재": ready["total"]},
                 {"항목": "완료율", "이전": f"{prev_ready['percent']}%", "현재": f"{ready['percent']}%"},
-                {"항목": "연결 참석 평균", "이전": f"{prev_att:.1f}명" if prev_att else "없음", "현재": f"{curr_att:.1f}명" if curr_att else "없음"},
+                {"항목": "연결 현장 참석", "이전": _format_onsite_attendance(prev_att), "현재": _format_onsite_attendance(curr_att)},
             ])
             st.dataframe(comparison, hide_index=True, width="stretch")
             previous_review = row("SELECT * FROM event_reviews WHERE event_id=?", (previous["id"],))
@@ -1625,17 +1828,44 @@ def logs_page() -> None:
 
 
 def attendance_page() -> None:
-    hero("예배 인원 현황", "주일예배를 기준으로 최근 집계와 회차별 변화를 확인합니다.")
-    data = pd.DataFrame(rows("SELECT * FROM attendance ORDER BY service_date"))
+    hero("예배 인원 현황", "주일 현장 참석을 기준으로 보고, 온라인 지표는 별도로 확인합니다.")
+    data = _attendance_frame()
     if data.empty:
         st.info("예배 인원 데이터가 없습니다.")
         return
-    data["service_date"] = pd.to_datetime(data["service_date"])
     data["month"] = data["service_date"].dt.to_period("M").astype(str)
-    analysis_data = data[data["total_count"] > 0].copy()
+    analysis_data = data[data["_counted"]].copy()
+    sunday_all = data[data["service_type"] == "주일예배"].sort_values("service_date")
+    sunday_data = (
+        sunday_all[sunday_all["_counted"]]
+        .sort_values("service_date", ascending=False)
+        .drop_duplicates("service_date", keep="first")
+    )
+    snapshot = _sunday_attendance_snapshot(data)
+    missing_dates = snapshot["missing_dates"]
+    recorded_pending_dates = snapshot["recorded_pending_dates"]
+    absent_dates = snapshot["absent_dates"]
 
-    sunday_data = analysis_data[analysis_data["service_type"] == "주일예배"].sort_values("service_date", ascending=False)
-    missing_sunday_count = int(((data["service_type"] == "주일예배") & (data["total_count"] <= 0)).sum())
+    latest_count_date = sunday_data.iloc[0]["service_date"].strftime("%Y.%m.%d") if not sunday_data.empty else "없음"
+    last_sync = get_app_meta("last_google_sheets_sync_at", "")
+    last_sync_label = last_sync.replace("T", " ")[:16] if last_sync else "연동 전"
+    latest_meta, sync_meta = st.columns(2)
+    latest_meta.caption(f"최신 집계일 · {latest_count_date}")
+    sync_meta.caption(f"Google Sheets 마지막 성공 · {last_sync_label}")
+
+    if missing_dates:
+        missing_label = ", ".join(item.strftime("%m.%d") for item in missing_dates[-6:])
+        detail_parts = []
+        if recorded_pending_dates:
+            detail_parts.append(f"미입력 {len(recorded_pending_dates)}회")
+        if absent_dates:
+            detail_parts.append(f"행 없음 {len(absent_dates)}회")
+        detail_label = " · ".join(detail_parts)
+        st.warning(
+            f"자료 지연 · 최근 완료 기록 이후 지난 주일 {len(missing_dates)}회가 미확인입니다"
+            f" ({detail_label}) · {missing_label}"
+        )
+
     st.subheader("최근 주일예배")
     if sunday_data.empty:
         st.info("집계가 완료된 주일예배 인원 기록이 없습니다.")
@@ -1644,101 +1874,174 @@ def attendance_page() -> None:
         previous_sunday = sunday_data.iloc[1] if len(sunday_data) > 1 else None
         latest_total = int(latest_sunday["total_count"]) if pd.notna(latest_sunday["total_count"]) else 0
         latest_offline = int(latest_sunday["offline_count"]) if pd.notna(latest_sunday["offline_count"]) else 0
-        latest_online = int(latest_sunday["online_count"]) if pd.notna(latest_sunday["online_count"]) else 0
-        total_delta = None
-        if previous_sunday is not None and pd.notna(previous_sunday["total_count"]):
-            total_delta = f"이전 주일 대비 {latest_total - int(previous_sunday['total_count']):+d}명"
-        delta_chip = total_delta or "이전 주일 비교 없음"
+        latest_status = str(latest_sunday["_record_status"])
+        latest_online = int(latest_sunday["online_count"]) if pd.notna(latest_sunday["online_count"]) else None
+        comparison_text = "직전 집계 비교 없음"
+        if previous_sunday is not None and pd.notna(previous_sunday["offline_count"]):
+            interval_days = int((latest_sunday["service_date"] - previous_sunday["service_date"]).days)
+            onsite_delta = latest_offline - int(previous_sunday["offline_count"])
+            comparison_title = "전주 대비" if interval_days == 7 else f"직전 집계 대비 · {interval_days}일 간격"
+            comparison_text = f"{comparison_title} {onsite_delta:+d}명"
+        online_text = "송출 없음" if latest_status == "NO_STREAM" else (f"{latest_online}명" if latest_online is not None else "미확인")
+        status_text = ATTENDANCE_STATUS_LABELS.get(latest_status, latest_status)
         st.markdown(
             '<div class="ops-attendance">'
-            f'<div class="date">{latest_sunday["service_date"].strftime("%Y.%m.%d")} · 집계 완료</div>'
-            f'<div class="total">총 {latest_total}명</div>'
-            f'<div class="chips"><span class="ops-chip">현장 {latest_offline}명</span>'
-            f'<span class="ops-chip">온라인 {latest_online}명</span>'
-            f'<span class="ops-chip">{html.escape(delta_chip)}</span></div></div>',
+            f'<div class="date">{latest_sunday["service_date"].strftime("%Y.%m.%d")} · {html.escape(status_text)}</div>'
+            f'<div class="total">현장 {latest_offline}명</div>'
+            f'<div class="chips"><span class="ops-chip">온라인 지표 {html.escape(online_text)}</span>'
+            f'<span class="ops-chip">합산 참고 {latest_total}명 · 중복 가능</span>'
+            f'<span class="ops-chip">{html.escape(comparison_text)}</span></div></div>',
             unsafe_allow_html=True,
         )
-
-        newer_unreported = data[
-            (data["service_type"] == "주일예배")
-            & (data["service_date"] > latest_sunday["service_date"])
-            & (data["total_count"] <= 0)
-        ].sort_values("service_date", ascending=False)
-        if not newer_unreported.empty:
-            pending_date = newer_unreported.iloc[0]["service_date"].strftime("%Y.%m.%d")
-            st.caption(f"{pending_date} 주일예배는 인원이 아직 입력되지 않아 최근 집계 완료 기록을 표시했습니다.")
+        st.caption("온라인 수치는 고유 참석자가 아닌 시청 지표일 수 있어 현장 인원과 분리해서 봅니다.")
+        latest_metric_value = latest_sunday.get("metric_type", "")
+        latest_metric_type = str(latest_metric_value if pd.notna(latest_metric_value) else "").strip().upper()
+        if latest_metric_type in {"ONSITE_PLUS_ONLINE_UNDEFINED", "LEGACY_COMBINED_COUNTS"}:
+            st.caption("⚠ 온라인 지표의 집계 기준이 아직 정의되지 않았습니다. 합산은 참고치로만 확인하세요.")
 
     if sunday_data.empty:
         return
 
-    # 달력상의 7일·30일 평균 대신 실제 주일예배 회차를 기준으로 비교한다.
+    # 달력상의 7일·30일 평균 대신 집계가 완료된 실제 주일예배 회차를 비교한다.
     recent_four = sunday_data.head(4)
     previous_four = sunday_data.iloc[4:8]
-    _latest_total_int = int(sunday_data.iloc[0]["total_count"])
-    week_delta = _latest_total_int - int(sunday_data.iloc[1]["total_count"]) if len(sunday_data) > 1 else None
-    recent_four_average = float(recent_four["total_count"].mean())
-    recent_offline_average = float(recent_four["offline_count"].mean())
+    week_delta = None
+    interval_days = None
+    if len(sunday_data) > 1 and pd.notna(sunday_data.iloc[0]["offline_count"]) and pd.notna(sunday_data.iloc[1]["offline_count"]):
+        interval_days = int((sunday_data.iloc[0]["service_date"] - sunday_data.iloc[1]["service_date"]).days)
+        week_delta = int(sunday_data.iloc[0]["offline_count"]) - int(sunday_data.iloc[1]["offline_count"])
+    comparison_label = "전주 현장 대비" if interval_days == 7 else (
+        f"직전 집계 현장 대비 · {interval_days}일" if interval_days is not None else "직전 집계 현장 대비"
+    )
+    recent_offline_average = float(recent_four["offline_count"].mean()) if recent_four["offline_count"].notna().any() else None
+    recent_online_values = recent_four.loc[
+        recent_four["_record_status"] != "NO_STREAM", "online_count"
+    ].dropna()
+    recent_online_average = float(recent_online_values.mean()) if not recent_online_values.empty else None
     four_week_delta = (
-        recent_four_average - float(previous_four["total_count"].mean())
-        if len(previous_four) == 4
+        recent_offline_average - float(previous_four["offline_count"].mean())
+        if len(previous_four) == 4 and recent_offline_average is not None and previous_four["offline_count"].notna().any()
         else None
     )
     stats = [
-        ("전주 대비", f"{week_delta:+d}명" if week_delta is not None else "비교 없음"),
-        ("최근 4회 평균", f"{recent_four_average:.1f}명"),
-        ("최근 4회 현장 평균", f"{recent_offline_average:.1f}명"),
-        ("직전 4회 평균 대비", f"{four_week_delta:+.1f}명" if four_week_delta is not None else "비교 없음"),
+        (comparison_label, f"{week_delta:+d}명" if week_delta is not None else "비교 없음"),
+        ("최근 4회 현장 평균", f"{recent_offline_average:.1f}명" if recent_offline_average is not None else "자료 없음"),
+        ("직전 4회 현장 평균 대비", f"{four_week_delta:+.1f}명" if four_week_delta is not None else "비교 없음"),
+        ("최근 4회 온라인 지표 평균", f"{recent_online_average:.1f}" if recent_online_average is not None else "자료 없음"),
     ]
     compact_stats(stats, columns=4)
+    recent_period = recent_four.sort_values("service_date")
+    st.caption(
+        f"최근 4개 집계 완료 회차 · {recent_period.iloc[0]['service_date'].strftime('%Y.%m.%d')}"
+        f" ~ {recent_period.iloc[-1]['service_date'].strftime('%Y.%m.%d')} · "
+        "누락 주일은 평균에서 제외 · 송출 없음은 온라인 평균에서 제외"
+    )
 
     st.subheader("주일예배 회차별 추이")
     count_presets = {"최근 8회": 8, "최근 12회": 12, "최근 26회": 26, "최근 52회": 52, "전체": None}
-    selected_count = st.radio("표시 범위", list(count_presets), horizontal=True, key="sunday_attendance_count")
-    count_limit = count_presets[selected_count]
-    filtered = sunday_data if count_limit is None else sunday_data.head(count_limit)
-    filtered = filtered.sort_values("service_date")
-    if missing_sunday_count:
-        st.caption(f"인원이 아직 집계되지 않은 주일예배 {missing_sunday_count}건은 계산에서 제외하고 원본 기록은 보존했습니다.")
-    trend = filtered.sort_values(["service_date", "service_type"])
-    fig = px.line(
-        trend,
-        x="service_date",
-        y="total_count",
-        markers=True,
-        labels={"service_date": "주일예배일", "total_count": "총인원"},
+    selected_count = st.radio(
+        "표시 범위", list(count_presets), index=1, horizontal=True, key="sunday_attendance_count"
     )
-    fig.update_traces(line_color="#C4510B")
-    fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), showlegend=False, hovermode="x unified", height=330)
+    count_limit = count_presets[selected_count]
+    trend = _scheduled_sunday_trend(sunday_all, count_limit)
+    show_online = st.checkbox("온라인 지표 함께 보기", value=False, key="sunday_show_online")
+    chart_frame = trend.rename(columns={"offline_count": "현장 참석", "online_count": "온라인 지표"})
+    chart_labels = ["현장 참석"] + (["온라인 지표"] if show_online else [])
+    fig = px.line(
+        chart_frame,
+        x="service_date",
+        y=chart_labels,
+        markers=True,
+        labels={"service_date": "주일예배일", "value": "인원 / 지표", "variable": "구분"},
+        color_discrete_map={"현장 참석": "#C4510B", "온라인 지표": "#5B4A3E"},
+    )
+    fig.update_traces(connectgaps=False)
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=20, b=10),
+        showlegend=show_online,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        hovermode="x unified",
+        height=330,
+    )
     st.plotly_chart(fig, width="stretch")
+    gap_rows = trend[(trend["offline_count"].isna()) & (trend["record_status_label"] != "예배 취소")]
+    if not gap_rows.empty:
+        gap_labels = ", ".join(gap_rows["service_date"].dt.strftime("%m.%d").tail(8).tolist())
+        st.caption(f"빈 구간은 현장 집계가 없거나 행이 없는 주일입니다 · {gap_labels}")
 
-    with st.expander("주일예배 상세 기록·데이터 품질"):
-        sunday_detail = filtered.sort_values("service_date", ascending=False)[
-            ["service_date", "offline_count", "online_count", "total_count", "notes"]
-        ].rename(columns={
+    selected_start = trend["service_date"].min()
+    selected_end = trend["service_date"].max()
+    filtered = sunday_all[
+        (sunday_all["service_date"] >= selected_start) & (sunday_all["service_date"] <= selected_end)
+    ].sort_values("service_date", ascending=False)
+
+    with st.expander("주일예배 상세 기록"):
+        detail_columns = ["service_date", "_record_status", "offline_count", "online_count", "total_count", "notes"]
+        if "measurement_note" in filtered.columns:
+            detail_columns.append("measurement_note")
+        sunday_detail = filtered[detail_columns].copy().rename(columns={
             "service_date": "주일예배일",
+            "_record_status": "집계 상태",
             "offline_count": "현장",
-            "online_count": "온라인",
-            "total_count": "총인원",
+            "online_count": "온라인 지표",
+            "total_count": "합산 참고",
             "notes": "비고",
+            "measurement_note": "측정 설명",
         })
         sunday_detail["주일예배일"] = sunday_detail["주일예배일"].dt.strftime("%Y.%m.%d")
+        sunday_detail["집계 상태"] = sunday_detail["집계 상태"].map(
+            lambda value: ATTENDANCE_STATUS_LABELS.get(str(value), str(value))
+        )
         st.dataframe(sunday_detail, hide_index=True, width="stretch", height=300)
-        st.subheader("데이터 품질")
+
+    with st.expander("관리자 · 데이터 품질"):
+        st.caption("Google Sheets 원본은 수정하지 않으며, 누락·상태·원본 값의 차이만 확인합니다.")
+        status_quality = sunday_all.groupby("_record_status", as_index=False).size()
+        status_quality["_record_status"] = status_quality["_record_status"].map(
+            lambda value: ATTENDANCE_STATUS_LABELS.get(str(value), str(value))
+        )
+        status_quality = status_quality.rename(columns={"_record_status": "집계 상태", "size": "건수"})
+        st.dataframe(status_quality, hide_index=True, width="stretch", height=180)
+        if absent_dates:
+            st.warning(
+                "행 자체가 없는 지난 주일 · " + ", ".join(item.strftime("%Y.%m.%d") for item in absent_dates)
+            )
         quality = data.groupby("data_quality", as_index=False).size()
         quality["data_quality"] = quality["data_quality"].map(quality_ko)
-        quality = quality.rename(columns={"data_quality": "데이터 상태", "size": "건수"})
+        quality = quality.rename(columns={"data_quality": "원본 데이터 상태", "size": "건수"})
         st.dataframe(quality, hide_index=True, width="stretch", height=180)
-        flagged = data[data["data_quality"] == "Needs Review"][["service_date", "service_type", "online_count", "offline_count", "total_count", "notes"]]
+        flagged_mask = (data["data_quality"] == "Needs Review") | data["_record_status"].isin({"PENDING", "UNKNOWN"})
+        admin_columns = [
+            item for item in [
+                "service_date", "service_type", "_record_status", "offline_count", "online_count",
+                "total_count", "raw_offline_count", "raw_online_count", "raw_total_count",
+                "metric_type", "measurement_note", "notes", "source_sheet", "source_row",
+            ] if item in data.columns
+        ]
+        flagged = data[flagged_mask][admin_columns].copy()
         if not flagged.empty:
             st.warning(f"확인이 필요한 예배 인원 기록 {len(flagged)}건")
+            flagged["service_date"] = flagged["service_date"].dt.strftime("%Y.%m.%d")
+            if "_record_status" in flagged.columns:
+                flagged["_record_status"] = flagged["_record_status"].map(
+                    lambda value: ATTENDANCE_STATUS_LABELS.get(str(value), str(value))
+                )
             st.dataframe(
                 flagged.rename(columns={
                     "service_date": "예배일",
                     "service_type": "예배 종류",
-                    "online_count": "온라인",
+                    "_record_status": "집계 상태",
                     "offline_count": "현장",
-                    "total_count": "총인원",
+                    "online_count": "온라인 지표",
+                    "total_count": "합산 참고",
+                    "raw_offline_count": "원본 현장",
+                    "raw_online_count": "원본 온라인",
+                    "raw_total_count": "원본 합계",
+                    "metric_type": "측정 방식",
+                    "measurement_note": "측정 설명",
                     "notes": "확인 내용",
+                    "source_sheet": "원본 시트",
+                    "source_row": "원본 행",
                 }),
                 hide_index=True,
                 width="stretch",
@@ -1757,8 +2060,8 @@ def attendance_page() -> None:
                 other_detail.rename(columns={
                     "service_date": "예배일",
                     "offline_count": "현장",
-                    "online_count": "온라인",
-                    "total_count": "총인원",
+                    "online_count": "온라인 지표",
+                    "total_count": "합산 참고",
                     "notes": "비고",
                 }),
                 hide_index=True,

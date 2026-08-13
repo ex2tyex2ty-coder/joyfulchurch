@@ -5,10 +5,11 @@ import io
 import json
 import re
 import sqlite3
+import unicodedata
 from contextlib import closing, contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from config import BACKUP_DIR, DB_PATH, ensure_directories
 
@@ -125,6 +126,8 @@ CREATE TABLE IF NOT EXISTS events (
     status TEXT NOT NULL DEFAULT 'PLANNING',
     event_template_id INTEGER REFERENCES event_templates(id),
     previous_event_id INTEGER REFERENCES events(id),
+    service_id INTEGER REFERENCES services(id),
+    service_type TEXT,
     source TEXT,
     source_event_id TEXT,
     data_quality TEXT NOT NULL DEFAULT 'Imported',
@@ -239,6 +242,7 @@ CREATE TABLE IF NOT EXISTS services (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     service_date TEXT NOT NULL,
     service_type TEXT,
+    canonical_key TEXT,
     special_sequence TEXT,
     representative_prayer TEXT,
     source TEXT,
@@ -248,6 +252,19 @@ CREATE TABLE IF NOT EXISTS services (
     UNIQUE(service_date, service_type, source_sheet)
 );
 
+CREATE TABLE IF NOT EXISTS service_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+    source TEXT NOT NULL DEFAULT '',
+    source_sheet TEXT NOT NULL DEFAULT '',
+    special_sequence TEXT,
+    representative_prayer TEXT,
+    data_quality TEXT NOT NULL DEFAULT 'Imported',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(service_id, source, source_sheet)
+);
+
 CREATE TABLE IF NOT EXISTS attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     service_date TEXT NOT NULL,
@@ -255,6 +272,13 @@ CREATE TABLE IF NOT EXISTS attendance (
     online_count INTEGER,
     offline_count INTEGER,
     total_count INTEGER,
+    record_status TEXT NOT NULL DEFAULT 'UNKNOWN'
+        CHECK(record_status IN ('COUNTED','PENDING','CANCELLED','NO_STREAM','ESTIMATED','UNKNOWN')),
+    raw_online_count INTEGER,
+    raw_offline_count INTEGER,
+    raw_total_count INTEGER,
+    metric_type TEXT NOT NULL DEFAULT 'ONSITE_PLUS_ONLINE_UNDEFINED',
+    measurement_note TEXT,
     event_id INTEGER REFERENCES events(id),
     service_id INTEGER REFERENCES services(id),
     notes TEXT,
@@ -335,6 +359,7 @@ CREATE INDEX IF NOT EXISTS idx_manuals_status ON manuals(status);
 CREATE INDEX IF NOT EXISTS idx_logs_event ON operation_logs(event_id);
 CREATE INDEX IF NOT EXISTS idx_review_items_status ON review_items(status, archived_at);
 CREATE INDEX IF NOT EXISTS idx_review_comments_item ON review_comments(review_item_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_service_sources_lookup ON service_sources(source, source_sheet, service_id);
 """
 
 
@@ -351,11 +376,308 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def canonical_service_type(service_type: Any) -> str:
+    """Return a stable display value without changing the source's meaning."""
+    value = unicodedata.normalize("NFKC", str(service_type or ""))
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def canonical_service_key(service_date: Any, service_type: Any) -> str:
+    date_value = str(service_date or "").strip()
+    # Spacing in sheet labels is presentation, not occurrence identity:
+    # "주일 예배" and "주일예배" refer to the same service.
+    type_value = re.sub(r"\s+", "", canonical_service_type(service_type)).casefold()
+    if not date_value or not type_value:
+        raise ValueError("예배 날짜와 예배 종류가 있어야 예배 회차를 식별할 수 있습니다.")
+    return f"{date_value}|{type_value}"
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(item["name"]) for item in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _add_column(conn: sqlite3.Connection, table: str, definition: str) -> None:
+    column = definition.split()[0]
+    if column not in _table_columns(conn, table):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+
+
+def _merge_text_values(*values: Any) -> str | None:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return " / ".join(result) or None
+
+
+def upsert_service_source(
+    conn: sqlite3.Connection,
+    service_id: int,
+    source: str | None,
+    source_sheet: str | None,
+    special_sequence: str | None = None,
+    representative_prayer: str | None = None,
+    data_quality: str = "Imported",
+) -> None:
+    """Preserve every source row while all consumers use one canonical service."""
+    conn.execute(
+        "INSERT INTO service_sources(service_id,source,source_sheet,special_sequence,representative_prayer,data_quality) "
+        "VALUES(?,?,?,?,?,?) ON CONFLICT(service_id,source,source_sheet) DO UPDATE SET "
+        "special_sequence=CASE WHEN excluded.special_sequence<>'' THEN excluded.special_sequence ELSE service_sources.special_sequence END,"
+        "representative_prayer=CASE WHEN excluded.representative_prayer<>'' THEN excluded.representative_prayer ELSE service_sources.representative_prayer END,"
+        "data_quality=excluded.data_quality,updated_at=CURRENT_TIMESTAMP",
+        (
+            service_id,
+            str(source or ""),
+            str(source_sheet or ""),
+            str(special_sequence or ""),
+            str(representative_prayer or ""),
+            data_quality or "Imported",
+        ),
+    )
+
+
+def get_or_create_canonical_service(
+    conn: sqlite3.Connection,
+    service_date: str,
+    service_type: str,
+    *,
+    special_sequence: str | None = None,
+    representative_prayer: str | None = None,
+    source: str | None = None,
+    source_sheet: str | None = None,
+    data_quality: str = "Imported",
+) -> int:
+    """Get the single service occurrence shared by attendance, lineup and events."""
+    display_type = canonical_service_type(service_type)
+    key = canonical_service_key(service_date, display_type)
+    item = conn.execute("SELECT * FROM services WHERE canonical_key=? ORDER BY id LIMIT 1", (key,)).fetchone()
+    if item is None:
+        cur = conn.execute(
+            "INSERT INTO services(service_date,service_type,canonical_key,special_sequence,representative_prayer,source,source_sheet,data_quality) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (service_date, display_type, key, special_sequence, representative_prayer, source, source_sheet, data_quality),
+        )
+        service_id = int(cur.lastrowid)
+    else:
+        service_id = int(item["id"])
+        merged_special = _merge_text_values(item["special_sequence"], special_sequence)
+        merged_prayer = _merge_text_values(item["representative_prayer"], representative_prayer)
+        merged_quality = "Needs Review" if "Needs Review" in {item["data_quality"], data_quality} else (item["data_quality"] or data_quality)
+        conn.execute(
+            "UPDATE services SET special_sequence=?,representative_prayer=?,"
+            "source=COALESCE(NULLIF(source,''),?),source_sheet=COALESCE(NULLIF(source_sheet,''),?),data_quality=? WHERE id=?",
+            (merged_special, merged_prayer, source, source_sheet, merged_quality, service_id),
+        )
+    upsert_service_source(
+        conn,
+        service_id,
+        source,
+        source_sheet,
+        special_sequence,
+        representative_prayer,
+        data_quality,
+    )
+    return service_id
+
+
+def canonicalize_service_records(conn: sqlite3.Connection) -> None:
+    """Merge legacy per-sheet services without losing assignments or provenance."""
+    services = list(conn.execute("SELECT * FROM services ORDER BY id").fetchall())
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in services:
+        try:
+            key = canonical_service_key(item["service_date"], item["service_type"])
+        except ValueError:
+            continue
+        grouped.setdefault(key, []).append(item)
+
+    for key, items in grouped.items():
+        canonical = items[0]
+        canonical_id = int(canonical["id"])
+        merged_special = _merge_text_values(*(item["special_sequence"] for item in items))
+        merged_prayer = _merge_text_values(*(item["representative_prayer"] for item in items))
+        merged_quality = "Needs Review" if any(item["data_quality"] == "Needs Review" for item in items) else canonical["data_quality"]
+
+        for item in items:
+            upsert_service_source(
+                conn,
+                canonical_id,
+                item["source"],
+                item["source_sheet"],
+                item["special_sequence"],
+                item["representative_prayer"],
+                item["data_quality"],
+            )
+
+        for duplicate in items[1:]:
+            duplicate_id = int(duplicate["id"])
+            for source_item in conn.execute(
+                "SELECT * FROM service_sources WHERE service_id=?", (duplicate_id,)
+            ).fetchall():
+                upsert_service_source(
+                    conn,
+                    canonical_id,
+                    source_item["source"],
+                    source_item["source_sheet"],
+                    source_item["special_sequence"],
+                    source_item["representative_prayer"],
+                    source_item["data_quality"],
+                )
+            conn.execute("UPDATE attendance SET service_id=? WHERE service_id=?", (canonical_id, duplicate_id))
+            conn.execute(
+                "INSERT OR IGNORE INTO assignments(service_id,member_id,role,raw_name,source,data_quality,created_at) "
+                "SELECT ?,member_id,role,raw_name,source,data_quality,created_at FROM assignments WHERE service_id=?",
+                (canonical_id, duplicate_id),
+            )
+            conn.execute("DELETE FROM assignments WHERE service_id=?", (duplicate_id,))
+            if "service_id" in _table_columns(conn, "events"):
+                conn.execute("UPDATE events SET service_id=? WHERE service_id=?", (canonical_id, duplicate_id))
+            conn.execute("DELETE FROM service_sources WHERE service_id=?", (duplicate_id,))
+            conn.execute("DELETE FROM services WHERE id=?", (duplicate_id,))
+
+        conn.execute(
+            "UPDATE services SET service_type=?,canonical_key=?,special_sequence=?,representative_prayer=?,data_quality=? WHERE id=?",
+            (
+                canonical_service_type(canonical["service_type"]),
+                key,
+                merged_special,
+                merged_prayer,
+                merged_quality,
+                canonical_id,
+            ),
+        )
+        conn.execute(
+            "UPDATE attendance SET service_type=? WHERE service_id=?",
+            (canonical_service_type(canonical["service_type"]), canonical_id),
+        )
+
+
+def relink_attendance_events(conn: sqlite3.Connection) -> None:
+    """Link imported events only when their exact canonical service can be proven."""
+    events = list(conn.execute("SELECT * FROM events WHERE event_date IS NOT NULL ORDER BY id").fetchall())
+    for event in events:
+        service = None
+        if event.get("service_id") is not None:
+            candidate = conn.execute(
+                "SELECT * FROM services WHERE id=? AND service_date=?",
+                (event["service_id"], event["event_date"]),
+            ).fetchone()
+            if candidate and (not event.get("service_type") or canonical_service_type(event["service_type"]) == candidate["service_type"]):
+                service = candidate
+
+        if service is None and event.get("service_type"):
+            key = canonical_service_key(event["event_date"], event["service_type"])
+            service = conn.execute("SELECT * FROM services WHERE canonical_key=?", (key,)).fetchone()
+
+        if service is None and event.get("source_event_id"):
+            source_sheet = str(event["source_event_id"]).rsplit(":", 1)[0]
+            matches = conn.execute(
+                "SELECT DISTINCT s.* FROM services s JOIN service_sources ss ON ss.service_id=s.id "
+                "WHERE s.service_date=? AND ss.source=? AND ss.source_sheet=?",
+                (event["event_date"], str(event.get("source") or ""), source_sheet),
+            ).fetchall()
+            if len(matches) == 1:
+                service = matches[0]
+
+        if service is None:
+            candidates = conn.execute(
+                "SELECT * FROM services WHERE service_date=? AND COALESCE(special_sequence,'')<>''",
+                (event["event_date"],),
+            ).fetchall()
+            title_compact = re.sub(r"\s+", "", str(event["title"] or "")).casefold()
+            matches = [
+                item for item in candidates
+                if re.sub(r"\s+", "", str(item["special_sequence"] or "")).casefold() in title_compact
+            ]
+            if len(matches) == 1:
+                service = matches[0]
+
+        if service is not None:
+            conn.execute(
+                "UPDATE events SET service_id=?,service_type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (service["id"], service["service_type"], event["id"]),
+            )
+        elif event.get("service_id") is not None:
+            conn.execute(
+                "UPDATE events SET service_id=NULL,service_type=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (event["id"],),
+            )
+
+    # Remove the old date-only links, then restore only exact service links.
+    conn.execute(
+        "UPDATE attendance SET event_id=NULL WHERE event_id IS NOT NULL AND NOT EXISTS ("
+        "SELECT 1 FROM events e WHERE e.id=attendance.event_id AND e.service_id=attendance.service_id)"
+    )
+    for service_event in conn.execute(
+        "SELECT service_id,MIN(id) AS event_id FROM events WHERE service_id IS NOT NULL AND archived_at IS NULL GROUP BY service_id"
+    ).fetchall():
+        conn.execute(
+            "UPDATE attendance SET event_id=? WHERE service_id=?",
+            (service_event["event_id"], service_event["service_id"]),
+        )
+
+
+def _upgrade_schema(conn: sqlite3.Connection) -> None:
+    _add_column(conn, "services", "canonical_key TEXT")
+    _add_column(conn, "events", "service_id INTEGER REFERENCES services(id)")
+    _add_column(conn, "events", "service_type TEXT")
+    _add_column(conn, "attendance", "record_status TEXT NOT NULL DEFAULT 'UNKNOWN'")
+    _add_column(conn, "attendance", "raw_online_count INTEGER")
+    _add_column(conn, "attendance", "raw_offline_count INTEGER")
+    _add_column(conn, "attendance", "raw_total_count INTEGER")
+    _add_column(conn, "attendance", "metric_type TEXT NOT NULL DEFAULT 'ONSITE_PLUS_ONLINE_UNDEFINED'")
+    _add_column(conn, "attendance", "measurement_note TEXT")
+
+    # CREATE TABLE IF NOT EXISTS above creates this table on both old and new databases.
+    for item in conn.execute("SELECT * FROM services").fetchall():
+        upsert_service_source(
+            conn,
+            int(item["id"]),
+            item["source"],
+            item["source_sheet"],
+            item["special_sequence"],
+            item["representative_prayer"],
+            item["data_quality"],
+        )
+    canonicalize_service_records(conn)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_services_canonical_key ON services(canonical_key)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_service ON attendance(service_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_service ON events(service_id)")
+
+    backfilled = conn.execute(
+        "SELECT value FROM app_meta WHERE key='attendance_reliability_backfill_v1'"
+    ).fetchone()
+    if not backfilled:
+        conn.execute(
+            "UPDATE attendance SET record_status=CASE "
+            "WHEN COALESCE(total_count,0)>0 THEN 'COUNTED' "
+            "WHEN COALESCE(online_count,0)=0 AND COALESCE(offline_count,0)=0 AND COALESCE(total_count,0)=0 "
+            "AND data_quality='Needs Review' THEN 'PENDING' ELSE 'UNKNOWN' END"
+        )
+        conn.execute(
+            "UPDATE attendance SET "
+            "raw_online_count=CASE WHEN record_status='PENDING' THEN NULL ELSE online_count END,"
+            "raw_offline_count=CASE WHEN record_status='PENDING' THEN NULL ELSE offline_count END,"
+            "raw_total_count=CASE WHEN record_status='PENDING' THEN NULL ELSE total_count END,"
+            "metric_type='ONSITE_PLUS_ONLINE_UNDEFINED',"
+            "measurement_note=CASE WHEN record_status='PENDING' "
+            "THEN '기존 확인필요 0값을 미입력으로 추정해 변환함' "
+            "ELSE '기존 DB 값에서 자동 보존함; 원본 빈칸과 명시적 0의 구분은 확인 필요' END"
+        )
+        conn.execute(
+            "INSERT INTO app_meta(key,value) VALUES('attendance_reliability_backfill_v1','complete')"
+        )
+    relink_attendance_events(conn)
+
+
 def init_db(path: Path | str = DB_PATH) -> None:
     with closing(connect(path)) as conn:
         conn.executescript(SCHEMA)
+        _upgrade_schema(conn)
         conn.execute(
-            "INSERT INTO app_meta(key, value) VALUES('schema_version', '2') "
+            "INSERT INTO app_meta(key, value) VALUES('schema_version', '3') "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP"
         )
         conn.commit()
@@ -374,14 +696,19 @@ def transaction(path: Path | str = DB_PATH):
         conn.close()
 
 
-def rows(sql: str, params: Iterable[Any] = (), path: Path | str = DB_PATH) -> list[dict[str, Any]]:
-    with closing(connect(path)) as conn:
-        return list(conn.execute(sql, tuple(params)).fetchall())
+def _sql_params(params: Iterable[Any] | Mapping[str, Any]) -> tuple[Any, ...] | Mapping[str, Any]:
+    """Preserve mappings for SQLite named placeholders on strict Python versions."""
+    return params if isinstance(params, Mapping) else tuple(params)
 
 
-def row(sql: str, params: Iterable[Any] = (), path: Path | str = DB_PATH) -> dict[str, Any] | None:
+def rows(sql: str, params: Iterable[Any] | Mapping[str, Any] = (), path: Path | str = DB_PATH) -> list[dict[str, Any]]:
     with closing(connect(path)) as conn:
-        return conn.execute(sql, tuple(params)).fetchone()
+        return list(conn.execute(sql, _sql_params(params)).fetchall())
+
+
+def row(sql: str, params: Iterable[Any] | Mapping[str, Any] = (), path: Path | str = DB_PATH) -> dict[str, Any] | None:
+    with closing(connect(path)) as conn:
+        return conn.execute(sql, _sql_params(params)).fetchone()
 
 
 def get_app_meta(key: str, default: str = "", path: Path | str = DB_PATH) -> str:
@@ -858,10 +1185,10 @@ def export_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     table_names = [
         "events", "tasks", "event_reviews", "event_templates", "task_templates", "manuals", "manual_revisions",
-        "decisions", "operation_logs", "references_data", "church_calendar_events", "attendance", "services", "members", "assignments",
+        "decisions", "operation_logs", "references_data", "church_calendar_events", "attendance", "services", "service_sources", "members", "assignments",
         "review_items", "review_comments", "source_files", "unresolved_imports", "audit_logs",
     ]
-    payload: dict[str, Any] = {"exported_at": datetime.now().isoformat(), "schema_version": 2, "tables": {}}
+    payload: dict[str, Any] = {"exported_at": datetime.now().isoformat(), "schema_version": 3, "tables": {}}
     csv_payloads: dict[str, str] = {}
     with closing(connect(path)) as conn:
         for table in table_names:

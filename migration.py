@@ -8,6 +8,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -15,7 +16,15 @@ from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
 from config import DB_PATH, IMPORT_REPORT_PATH, QUALITY_IMPORTED, QUALITY_NEEDS_REVIEW, SOURCE_DIR, ensure_directories
-from db import connect, init_db, series_key
+from db import (
+    canonical_service_key,
+    canonicalize_service_records,
+    connect,
+    get_or_create_canonical_service,
+    init_db,
+    relink_attendance_events,
+    series_key,
+)
 
 
 URL_RE = re.compile(r"https?://[^\s\]\)]+", re.I)
@@ -32,6 +41,26 @@ def clean(value: Any) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value).strip()
+
+
+def optional_count(value: Any) -> int | None:
+    """Preserve a blank count as NULL and an explicit zero as 0."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, bool):
+        raise ValueError("참석 인원에는 true/false를 사용할 수 없습니다.")
+    text = value.strip().replace(",", "") if isinstance(value, str) else str(value)
+    try:
+        numeric = Decimal(text)
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"정수 인원으로 읽을 수 없는 값: {value!r}") from exc
+    if not numeric.is_finite() or numeric < 0 or numeric != numeric.to_integral_value():
+        raise ValueError(f"참석 인원은 0 이상의 정수여야 합니다: {value!r}")
+    # SQLite INTEGER is a signed 64-bit value. Reject an unsafe value here so
+    # the source row is marked for review rather than failing the whole sync.
+    if numeric > 9_223_372_036_854_775_807:
+        raise ValueError(f"참석 인원이 저장 가능한 범위를 초과했습니다: {value!r}")
+    return int(numeric)
 
 
 def iso_date(value: Any) -> str | None:
@@ -66,7 +95,17 @@ def workbook_role(sheet_names: list[str]) -> str:
     names = set(sheet_names)
     if {"성찬식", "성인세례", "항시 체크 비품"}.issubset(names):
         return "MANUALS"
-    if "2025 예배인원" in names and any(MONTHLY_RE.match(name) for name in names):
+    attendance_years = {
+        int(match.group(1))
+        for name in names
+        if (match := ATTENDANCE_RE.match(name))
+    }
+    lineup_years = {
+        int(match.group(1))
+        for name in names
+        if (match := MONTHLY_RE.match(name))
+    }
+    if attendance_years & lineup_years:
         return "LINEUP_ATTENDANCE"
     return "UNKNOWN"
 
@@ -547,41 +586,91 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
                 continue
             raw_online = cells[2]
             raw_offline = cells[3]
-            online = int(raw_online or 0)
-            offline = int(raw_offline or 0)
-            original_total = int(cells[4] or 0)
-            calculated = online + offline
-            stored_total = calculated if raw_online is not None or raw_offline is not None else original_total
+            raw_total = cells[4]
+            invalid_counts: list[str] = []
+            try:
+                online = optional_count(raw_online)
+            except (TypeError, ValueError):
+                online = None
+                invalid_counts.append(f"온라인={raw_online!r}")
+            try:
+                offline = optional_count(raw_offline)
+            except (TypeError, ValueError):
+                offline = None
+                invalid_counts.append(f"현장={raw_offline!r}")
+            try:
+                original_total = optional_count(raw_total)
+            except (TypeError, ValueError):
+                original_total = None
+                invalid_counts.append(f"총계={raw_total!r}")
+            components_present = raw_online is not None or raw_offline is not None
+            calculated = int(online or 0) + int(offline or 0)
+            stored_total = calculated if components_present else original_total
+            if max(int(online or 0), int(offline or 0), int(original_total or 0)) > 0:
+                record_status = "COUNTED"
+            elif raw_online is None and raw_offline is None:
+                record_status = "PENDING"
+            else:
+                # An explicit 0 is not silently treated as a completed count.
+                record_status = "UNKNOWN"
             quality = QUALITY_IMPORTED
             reasons: list[str] = []
             if date.fromisoformat(service_date).year != source_year:
                 quality = QUALITY_NEEDS_REVIEW
                 reasons.append(f"{source_year} 시트에 {service_date} 날짜가 포함됨")
-            if original_total != calculated:
+            if original_total is not None and components_present and original_total != calculated:
                 quality = QUALITY_NEEDS_REVIEW
                 reasons.append(f"원본 총계 {original_total}와 온라인+오프라인 {calculated} 불일치")
-            if raw_online is None and raw_offline is None and original_total == 0:
+            if record_status == "PENDING":
                 quality = QUALITY_NEEDS_REVIEW
                 reasons.append("날짜와 예배구분은 있으나 참석 인원이 미입력 상태")
-            if online > offline:
+            elif record_status == "UNKNOWN":
+                quality = QUALITY_NEEDS_REVIEW
+                reasons.append("온라인·현장에 0이 명시되어 집계 완료 여부 확인 필요")
+            if invalid_counts:
+                quality = QUALITY_NEEDS_REVIEW
+                record_status = "UNKNOWN"
+                reasons.append("숫자로 읽을 수 없는 원본 값: " + ", ".join(invalid_counts))
+            if online is not None and offline is not None and online > offline:
                 quality = QUALITY_NEEDS_REVIEW
                 reasons.append("온라인 인원이 오프라인보다 커 열 입력 순서 확인 필요")
-            service = conn.execute(
-                "SELECT id FROM services WHERE service_date=? AND service_type=? ORDER BY id LIMIT 1",
-                (service_date, service_type),
+            service_exists = conn.execute(
+                "SELECT id FROM services WHERE canonical_key=?",
+                (canonical_service_key(service_date, service_type),),
             ).fetchone()
-            if service:
-                service_id = int(service["id"])
-            else:
-                cur = conn.execute(
-                    "INSERT INTO services(service_date,service_type,source,source_sheet,data_quality) VALUES(?,?,?,?,?)",
-                    (service_date, service_type, path.name, sheet.title, quality),
-                )
-                service_id = int(cur.lastrowid)
+            service_id = get_or_create_canonical_service(
+                conn,
+                service_date,
+                service_type,
+                source=path.name,
+                source_sheet=sheet.title,
+                data_quality=quality,
+            )
+            if service_exists is None:
                 service_count += 1
             conn.execute(
-                "INSERT INTO attendance(service_date,service_type,online_count,offline_count,total_count,service_id,notes,source,source_sheet,source_row,data_quality) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (service_date, service_type, online, offline, stored_total, service_id, "; ".join(reasons), path.name, sheet.title, row_number, quality),
+                "INSERT INTO attendance(service_date,service_type,online_count,offline_count,total_count,record_status,"
+                "raw_online_count,raw_offline_count,raw_total_count,metric_type,measurement_note,service_id,notes,source,source_sheet,source_row,data_quality) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    service_date,
+                    service_type,
+                    online,
+                    offline,
+                    stored_total,
+                    record_status,
+                    online,
+                    offline,
+                    original_total,
+                    "ONSITE_PLUS_ONLINE_UNDEFINED",
+                    "원본 시트의 온라인·현장·총계 열을 보존함; 온라인 집계 기준은 원본에 명시되지 않음",
+                    service_id,
+                    "; ".join(reasons),
+                    path.name,
+                    sheet.title,
+                    row_number,
+                    quality,
+                ),
             )
             attendance_count += 1
             if reasons:
@@ -624,18 +713,22 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
             if date.fromisoformat(service_date).month != month:
                 quality = QUALITY_NEEDS_REVIEW
                 insert_unresolved(conn, source_file_id, sheet.title, f"시트 월({month}월)과 날짜({service_date})가 일치하지 않음", service_date)
-            cur = conn.execute(
-                "INSERT INTO services(service_date,service_type,special_sequence,representative_prayer,source,source_sheet,data_quality) VALUES(?,?,?,?,?,?,?) "
-                "ON CONFLICT(service_date,service_type,source_sheet) DO UPDATE SET special_sequence=excluded.special_sequence,"
-                "representative_prayer=excluded.representative_prayer,source=excluded.source,data_quality=excluded.data_quality",
-                (service_date, service_type, special, prayer, path.name, sheet.title, quality),
-            )
-            service = conn.execute(
-                "SELECT id FROM services WHERE service_date=? AND service_type=? AND source_sheet=?",
-                (service_date, service_type, sheet.title),
+            service_exists = conn.execute(
+                "SELECT id FROM services WHERE canonical_key=?",
+                (canonical_service_key(service_date, service_type),),
             ).fetchone()
-            service_id = int(service["id"])
-            service_count += 1
+            service_id = get_or_create_canonical_service(
+                conn,
+                service_date,
+                service_type,
+                special_sequence=special,
+                representative_prayer=prayer,
+                source=path.name,
+                source_sheet=sheet.title,
+                data_quality=quality,
+            )
+            if service_exists is None:
+                service_count += 1
 
             for role, role_row in roles.items():
                 raw = clean(values[role_row][col_index]) if col_index < len(values[role_row]) else ""
@@ -660,19 +753,23 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
                 existing = conn.execute("SELECT id FROM events WHERE event_date=? AND title=?", (service_date, event_title)).fetchone()
                 if existing:
                     event_id = int(existing["id"])
+                    conn.execute(
+                        "UPDATE events SET service_id=?,service_type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (service_id, service_type, event_id),
+                    )
                 else:
                     previous = conn.execute(
                         "SELECT id FROM events WHERE series_key=? AND event_date < ? ORDER BY event_date DESC LIMIT 1",
                         (series_key(special), service_date),
                     ).fetchone()
                     event_cur = conn.execute(
-                        "INSERT INTO events(title,series_key,category,event_date,status,event_template_id,previous_event_id,source,source_event_id,data_quality) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO events(title,series_key,category,event_date,status,event_template_id,previous_event_id,service_id,service_type,source,source_event_id,data_quality) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                         (event_title, series_key(special), "특별순서", service_date, "COMPLETED" if service_date < date.today().isoformat() else "PLANNING",
-                         template_id, previous["id"] if previous else None, path.name, f"{sheet.title}:{col_index + 1}", quality),
+                         template_id, previous["id"] if previous else None, service_id, service_type, path.name, f"{sheet.title}:{col_index + 1}", quality),
                     )
                     event_id = int(event_cur.lastrowid)
                     event_count += 1
-                    conn.execute("UPDATE attendance SET event_id=? WHERE service_date=?", (event_id, service_date))
                     if template_id:
                         templates = conn.execute(
                             "SELECT * FROM task_templates WHERE event_template_id=? AND data_quality<>'Stale'",
@@ -687,6 +784,11 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
                                 (event_id, task["id"], task["title"], task["description"], task["default_owner"], task["priority"], task["source_timing"],
                                  task["due_offset"], due_date, task["source"], task["data_quality"]),
                             )
+                # Never use a date-only update: another worship type may share this date.
+                conn.execute(
+                    "UPDATE attendance SET event_id=? WHERE service_id=?",
+                    (event_id, service_id),
+                )
                 if video_row is not None and col_index < len(values[video_row]):
                     for url in extract_urls([values[video_row][col_index]]):
                         add_reference(conn, f"{special} 참고 영상", url, f"{path.name} / {sheet.title}", event_id=event_id)
@@ -813,6 +915,10 @@ def migrate(
                 report["skipped"].append({"file": path.name, "reason": "알려진 Spreadsheet 구조와 일치하지 않음"})
                 insert_unresolved(conn, source_file_id, "", "Workbook 역할을 자동 판별하지 못함", path.name)
 
+        # A sync may contain attendance and lineup sheets in either order. Resolve
+        # every consumer to the same canonical occurrence before publishing it.
+        canonicalize_service_records(conn)
+        relink_attendance_events(conn)
         report["unresolved"] = int(conn.execute("SELECT COUNT(*) AS count FROM unresolved_imports").fetchone()["count"])
         quality_rows = conn.execute("SELECT data_quality, COUNT(*) AS count FROM attendance GROUP BY data_quality").fetchall()
         report["data_quality"] = {item["data_quality"]: item["count"] for item in quality_rows}
