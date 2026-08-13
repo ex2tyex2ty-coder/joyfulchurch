@@ -126,39 +126,44 @@ h1,h2,h3,h4,h5,h6 { color:#2C1F16 !important; letter-spacing:-.02em; }
   color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important; opacity:1 !important;
 }
 a { color:#AD4700; }
-.ops-hero { background:linear-gradient(120deg,#FFA640,#FF8207); color:#2C1F16; border-radius:20px; padding:1.35rem 1.5rem; margin-bottom:1.1rem; box-shadow:0 10px 25px rgba(184,75,0,.16); }
-.ops-hero h1 { color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; margin:0; font-size:1.85rem; }
-.ops-hero p { color:#3B2A1E !important; -webkit-text-fill-color:#3B2A1E !important; margin:.35rem 0 0; opacity:1 !important; }
-.ops-card { background:white; border:1px solid #EBD6C2; border-radius:16px; padding:1rem 1.05rem; min-height:110px; box-shadow:0 3px 12px rgba(88,52,24,.06); }
-.ops-card .label { color:#6B584B; font-size:.82rem; margin-bottom:.25rem; }
-.ops-card .value { color:#2C1F16; font-weight:750; font-size:1.55rem; }
+.ops-hero { background:linear-gradient(135deg,#FF9420 0%,#FF6B00 60%,#D94E00 100%); color:#2C1F16; border-radius:22px; padding:1.5rem 1.6rem; margin-bottom:1.2rem; box-shadow:0 12px 32px rgba(184,75,0,.22),0 2px 8px rgba(184,75,0,.12); position:relative; overflow:hidden; }
+.ops-hero::after { content:''; position:absolute; top:-30px; right:-20px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.08); pointer-events:none; }
+.ops-hero h1 { color:#FFF8F0 !important; -webkit-text-fill-color:#FFF8F0 !important; margin:0; font-size:1.9rem; font-weight:900; letter-spacing:-.03em; }
+.ops-hero p { color:rgba(255,248,240,.85) !important; -webkit-text-fill-color:rgba(255,248,240,.85) !important; margin:.4rem 0 0; opacity:1 !important; font-size:.97rem; }
+.ops-card { background:white; border:1px solid #EBD6C2; border-radius:18px; padding:1.1rem 1.15rem; min-height:110px; box-shadow:0 2px 8px rgba(88,52,24,.06); transition:box-shadow .2s; }
+.ops-card:hover { box-shadow:0 6px 20px rgba(88,52,24,.12); }
+.ops-card .label { color:#6B584B; font-size:.82rem; margin-bottom:.25rem; font-weight:600; letter-spacing:.01em; }
+.ops-card .value { color:#2C1F16; font-weight:800; font-size:1.6rem; letter-spacing:-.02em; }
 .ops-card .note { color:#735F50; font-size:.78rem; margin-top:.3rem; }
-.ops-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; }
+.ops-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; }
 .ops-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.65rem; margin:.5rem 0 1rem; }
 .ops-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; padding:.75rem .85rem; }
 .ops-stat .label { color:#5B493D; font-size:.82rem; }
 .ops-stat .value { color:#2C1F16; font-size:1.35rem; font-weight:800; margin-top:.2rem; }
 .review-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.45rem; margin:.55rem 0 .9rem; }
-.review-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:12px; min-height:76px; padding:.55rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.review-stat .label { color:#5B493D; font-size:.78rem; line-height:1.2; white-space:nowrap; }
-.review-stat .value { color:#2C1F16; font-size:1.3rem; line-height:1.15; font-weight:800; margin-top:.25rem; }
-.compact-stat-grid { display:grid; grid-template-columns:repeat(var(--stat-cols,4),minmax(0,1fr)); gap:.42rem; margin:.55rem 0 .9rem; }
-.compact-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:12px; min-height:74px; padding:.55rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.compact-stat .label { color:#5B493D; font-size:.77rem; line-height:1.2; }
+.review-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; min-height:78px; padding:.6rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; transition:box-shadow .15s; }
+.review-stat:hover { box-shadow:0 4px 14px rgba(88,52,24,.10); }
+.review-stat .label { color:#5B493D; font-size:.78rem; line-height:1.2; white-space:nowrap; font-weight:600; }
+.review-stat .value { color:#2C1F16; font-size:1.35rem; line-height:1.15; font-weight:800; margin-top:.25rem; }
+.compact-stat-grid { display:grid; grid-template-columns:repeat(var(--stat-cols,4),minmax(0,1fr)); gap:.45rem; margin:.55rem 0 .9rem; }
+.compact-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; min-height:76px; padding:.6rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; transition:box-shadow .15s; }
+.compact-stat:hover { box-shadow:0 4px 14px rgba(88,52,24,.10); }
+.compact-stat .label { color:#5B493D; font-size:.77rem; line-height:1.2; font-weight:600; }
 .compact-stat .value { color:#2C1F16; font-size:1.2rem; line-height:1.15; font-weight:800; margin-top:.25rem; overflow-wrap:anywhere; }
 .ops-list { display:grid; gap:.5rem; margin:.45rem 0 .75rem; }
-.ops-list-item { background:#FFFFFF; border:1px solid #E4CCB6; border-left:4px solid #FF8207; border-radius:12px; padding:.7rem .8rem; }
-.ops-list-item .meta { color:#735F50; font-size:.8rem; margin-bottom:.18rem; }
-.ops-list-item .title { color:#2C1F16; font-size:.98rem; font-weight:800; }
+.ops-list-item { background:#FFFFFF; border:1px solid #E4CCB6; border-left:4px solid #FF8207; border-radius:14px; padding:.8rem .9rem; transition:box-shadow .15s,border-left-color .15s; }
+.ops-list-item:hover { box-shadow:0 4px 16px rgba(88,52,24,.10); border-left-color:#D94E00; }
+.ops-list-item .meta { color:#735F50; font-size:.8rem; margin-bottom:.2rem; }
+.ops-list-item .title { color:#2C1F16; font-size:1rem; font-weight:800; }
 .ops-list-item .note { color:#665448; font-size:.82rem; margin-top:.2rem; }
-.ops-attendance { background:#FFFFFF; border:1px solid #E4CCB6; border-left:5px solid #FF8207; border-radius:16px; padding:1rem 1.1rem; margin:.4rem 0 1rem; }
-.ops-attendance .date { color:#735F50; font-size:.88rem; }
-.ops-attendance .total { color:#2C1F16; font-size:2.15rem; font-weight:850; line-height:1.15; margin:.35rem 0 .55rem; }
+.ops-attendance { background:linear-gradient(135deg,#FFFFFF 70%,#FFF4E8 100%); border:1.5px solid #DEC4A8; border-left:5px solid #FF8207; border-radius:18px; padding:1.1rem 1.2rem; margin:.4rem 0 1rem; box-shadow:0 2px 10px rgba(88,52,24,.07); }
+.ops-attendance .date { color:#735F50; font-size:.88rem; font-weight:600; }
+.ops-attendance .total { color:#2C1F16; font-size:2.2rem; font-weight:900; line-height:1.15; margin:.35rem 0 .6rem; letter-spacing:-.03em; }
 .ops-attendance .chips { display:flex; flex-wrap:wrap; gap:.4rem; }
-.ops-chip { display:inline-block; background:#FFF0DE; color:#6B2C00 !important; border-radius:999px; padding:.3rem .65rem; font-size:.84rem; font-weight:700; }
-.ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1rem; padding-bottom:.85rem; border-bottom:1px solid #EBD6C2; }
-.ops-dashboard-head h1 { margin:0; font-size:1.75rem; }
-.ops-dashboard-head span { color:#735F50; font-size:.88rem; white-space:nowrap; }
+.ops-chip { display:inline-block; background:#FFF0DE; color:#6B2C00 !important; border-radius:999px; padding:.32rem .7rem; font-size:.84rem; font-weight:700; border:1px solid #F0CEAB; }
+.ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1.1rem; padding-bottom:.9rem; border-bottom:2px solid #EBD6C2; }
+.ops-dashboard-head h1 { margin:0; font-size:1.8rem; font-weight:900; letter-spacing:-.03em; }
+.ops-dashboard-head span { color:#735F50; font-size:.88rem; white-space:nowrap; background:#F5EDE3; padding:.25rem .6rem; border-radius:999px; font-weight:600; }
 .ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#FFF0DE; color:#963D00 !important; -webkit-text-fill-color:#963D00 !important; margin-right:.25rem; }
 .ops-badge.warn { background:#FFF1DB; color:#7A4800 !important; -webkit-text-fill-color:#7A4800 !important; }
 .ops-badge.danger { background:#FCE8E6; color:#8F2F28 !important; -webkit-text-fill-color:#8F2F28 !important; }
@@ -283,8 +288,9 @@ code, pre { background:#FFF3E7 !important; color:#30251D !important; }
   [data-testid="stSidebar"] [role="radiogroup"] p {
     font-size:.9rem !important;
   }
-  .ops-hero { padding:1rem; border-radius:14px; }
-  .ops-hero h1 { font-size:1.4rem; }
+  .ops-hero { padding:1rem 1.1rem; border-radius:16px; }
+  .ops-hero h1 { font-size:1.42rem; }
+  .ops-hero p { font-size:.88rem; }
   .ops-card { min-height:86px; padding:.75rem; }
   .ops-card .value { font-size:1.25rem; }
   [data-testid="stHorizontalBlock"] { gap:.35rem; }
@@ -404,7 +410,7 @@ def google_sheets_sync_bar() -> None:
         except Exception as exc:
             st.error(f"Google Sheets 업데이트를 완료하지 못했습니다: {exc}")
     if sync_status.startswith("ERROR:"):
-        st.warning(f"마지막 업데이트 시도는 실패했습니다. 화면에는 이전에 성공한 자료가 유지됩니다.")
+        st.warning("마지막 업데이트 시도는 실패했습니다. 화면에는 이전에 성공한 자료가 유지됩니다.")
 
 
 def badge(text: str, tone: str = "") -> str:
@@ -416,7 +422,7 @@ def search_excerpt(value: str | None, term: str, width: int = 280) -> str:
     text = " ".join((value or "").split())
     if len(text) <= width:
         return text
-    position = text.casefold().find(term.casefold())
+    position = text.casefold().find(term.casefold()) if term else -1
     start = max(0, position - 80) if position >= 0 else 0
     end = min(len(text), start + width)
     return ("…" if start else "") + text[start:end] + ("…" if end < len(text) else "")
@@ -773,17 +779,17 @@ def sidebar() -> str:
         st.markdown("---")
         menu_items = ["대시보드", "팀 확인", "행사", "매뉴얼", "예배 인원 현황", "교회력", "성경 검색", "전체 검색", "결정·운영로그", "보관함", "데이터·백업"]
         menu_labels = {
-            "대시보드": "⌂  대시보드",
-            "팀 확인": "✓  팀 확인",
-            "교회력": "▣  교회력",
-            "행사": "◆  행사",
-            "매뉴얼": "▤  매뉴얼",
-            "결정·운영로그": "✎  결정·운영 기록",
-            "예배 인원 현황": "▥  예배 인원 현황",
-            "성경 검색": "▦  성경 검색",
-            "전체 검색": "⌕  전체 검색",
-            "보관함": "□  보관함",
-            "데이터·백업": "⚙  데이터·백업",
+            "대시보드": "🏠  대시보드",
+            "팀 확인": "✅  팀 확인",
+            "교회력": "📅  교회력",
+            "행사": "🎯  행사",
+            "매뉴얼": "📋  매뉴얼",
+            "결정·운영로그": "📝  결정·운영 기록",
+            "예배 인원 현황": "📊  예배 인원 현황",
+            "성경 검색": "📖  성경 검색",
+            "전체 검색": "🔍  전체 검색",
+            "보관함": "📦  보관함",
+            "데이터·백업": "⚙️  데이터·백업",
         }
         pending_nav = st.session_state.pop("_navigate_to", None)
         if pending_nav in menu_items:
@@ -852,7 +858,7 @@ def review_board_summary() -> None:
         key=lambda item: (
             0 if item.get("priority") == "URGENT" else (1 if item.get("priority") == "HIGH" else 2),
             str(item.get("due_date") or "9999-12-31"),
-            str(item.get("updated_at") or item.get("created_at") or ""),
+            str(item.get("updated_at") or item.get("created_at") or "0000-00-00"),
         )
     )
     review_required_count = len(review_required_items)
@@ -901,29 +907,22 @@ def dashboard_page() -> None:
         "CASE tasks.priority WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, tasks.due_date LIMIT 3",
         (week_end, today, today),
     )
-    action_count = row(
-        "SELECT COUNT(*) AS count FROM tasks JOIN events ON events.id=tasks.event_id "
-        "WHERE tasks.archived_at IS NULL AND events.archived_at IS NULL AND events.status NOT IN ('COMPLETED','CANCELLED') "
-        "AND tasks.status<>'DONE' AND ((tasks.due_date IS NOT NULL AND tasks.due_date<=?) OR tasks.priority='HIGH')",
-        (week_end,),
-    )["count"]
-    overdue_count = row(
-        "SELECT COUNT(*) AS count FROM tasks JOIN events ON events.id=tasks.event_id "
-        "WHERE tasks.archived_at IS NULL AND events.archived_at IS NULL AND events.status NOT IN ('COMPLETED','CANCELLED') "
-        "AND tasks.status<>'DONE' AND tasks.due_date IS NOT NULL AND tasks.due_date<?",
-        (today,),
-    )["count"]
-    blocked_count = row(
-        "SELECT COUNT(*) AS count FROM tasks JOIN events ON events.id=tasks.event_id "
-        "WHERE tasks.archived_at IS NULL AND events.archived_at IS NULL AND events.status NOT IN ('COMPLETED','CANCELLED') AND tasks.status='BLOCKED'"
-    )["count"]
-    ownerless_high = row(
-        "SELECT COUNT(*) AS count FROM tasks JOIN events ON events.id=tasks.event_id "
-        "WHERE tasks.archived_at IS NULL AND events.archived_at IS NULL AND events.status NOT IN ('COMPLETED','CANCELLED') "
-        "AND tasks.status<>'DONE' AND tasks.priority='HIGH' AND COALESCE(TRIM(tasks.owner),'')=''"
-    )["count"]
-    recheck_count = row("SELECT COUNT(*) AS count FROM operation_logs WHERE archived_at IS NULL AND needs_recheck=1")["count"]
-    needs_review = row("SELECT COUNT(*) AS count FROM unresolved_imports WHERE status='OPEN' AND quality='Needs Review'")["count"]
+    _dash_stats = row(
+        """SELECT
+            SUM(CASE WHEN t.status<>'DONE' AND ((t.due_date IS NOT NULL AND t.due_date<=:week_end) OR t.priority='HIGH') THEN 1 ELSE 0 END) AS action_count,
+            SUM(CASE WHEN t.status<>'DONE' AND t.due_date IS NOT NULL AND t.due_date<:today THEN 1 ELSE 0 END) AS overdue_count,
+            SUM(CASE WHEN t.status='BLOCKED' THEN 1 ELSE 0 END) AS blocked_count,
+            SUM(CASE WHEN t.status<>'DONE' AND t.priority='HIGH' AND COALESCE(TRIM(t.owner),'')='' THEN 1 ELSE 0 END) AS ownerless_high
+        FROM tasks t JOIN events e ON e.id=t.event_id
+        WHERE t.archived_at IS NULL AND e.archived_at IS NULL AND e.status NOT IN ('COMPLETED','CANCELLED')""",
+        {"week_end": week_end, "today": today},
+    ) or {}
+    action_count = int(_dash_stats.get("action_count") or 0)
+    overdue_count = int(_dash_stats.get("overdue_count") or 0)
+    blocked_count = int(_dash_stats.get("blocked_count") or 0)
+    ownerless_high = int(_dash_stats.get("ownerless_high") or 0)
+    recheck_count = (row("SELECT COUNT(*) AS count FROM operation_logs WHERE archived_at IS NULL AND needs_recheck=1") or {}).get("count", 0)
+    needs_review = (row("SELECT COUNT(*) AS count FROM unresolved_imports WHERE status='OPEN' AND quality='Needs Review'") or {}).get("count", 0)
     sunday_date = next_weekday(today_date, 6)
     friday_date = next_weekday(today_date, 4)
     calendar_items = rows(
@@ -1186,7 +1185,14 @@ def event_detail(event_id: int) -> None:
                 ref_desc = st.text_area("설명")
                 if st.form_submit_button("참고자료 추가"):
                     if ref_title and ref_url:
-                        add_reference_record({"title": ref_title, "url": ref_url, "ref_type": ref_type, "reference_time": ref_time, "description": ref_desc, "event_id": event_id})
+                        add_reference_record({
+                            "title": ref_title,
+                            "url": ref_url,
+                            "ref_type": ref_type,
+                            "reference_time": ref_time,
+                            "description": ref_desc,
+                            "event_id": event_id,
+                        })
                         rerun("참고자료를 연결했습니다.")
                     else:
                         st.error("제목과 URL을 입력하세요.")
@@ -1540,7 +1546,18 @@ def logs_page() -> None:
                 )
                 if st.form_submit_button("결정 저장", type="primary"):
                     if title:
-                        add_decision({"event_id": event_map[event_label], "manual_id": manual_map[manual_label], "title": title, "previous_method": previous, "new_method": new, "reason": reason, "decided_at": date.today().isoformat(), "decided_by": decided_by, "evidence": evidence, "status": status})
+                        add_decision({
+                            "event_id": event_map[event_label],
+                            "manual_id": manual_map[manual_label],
+                            "title": title,
+                            "previous_method": previous,
+                            "new_method": new,
+                            "reason": reason,
+                            "decided_at": date.today().isoformat(),
+                            "decided_by": decided_by,
+                            "evidence": evidence,
+                            "status": status,
+                        })
                         rerun("결정과 이유를 기록했습니다.")
         items = rows(
             "SELECT decisions.*,events.title AS event_title,manuals.title AS manual_title FROM decisions "
@@ -1572,7 +1589,19 @@ def logs_page() -> None:
                 occurred = st.date_input("발생일", value=date.today())
                 if st.form_submit_button("로그 저장", type="primary"):
                     if title:
-                        add_operation_log({"event_id": event_map[event_label], "log_type": log_type, "title": title, "description": description, "equipment": equipment, "symptom": symptom, "cause": cause, "action_taken": action, "result": result, "needs_recheck": int(recheck), "occurred_at": occurred.isoformat()})
+                        add_operation_log({
+                            "event_id": event_map[event_label],
+                            "log_type": log_type,
+                            "title": title,
+                            "description": description,
+                            "equipment": equipment,
+                            "symptom": symptom,
+                            "cause": cause,
+                            "action_taken": action,
+                            "result": result,
+                            "needs_recheck": int(recheck),
+                            "occurred_at": occurred.isoformat(),
+                        })
                         rerun("운영 로그를 저장했습니다.")
         logs = rows("SELECT operation_logs.*,events.title AS event_title FROM operation_logs LEFT JOIN events ON events.id=operation_logs.event_id WHERE operation_logs.archived_at IS NULL ORDER BY COALESCE(occurred_at,operation_logs.created_at) DESC")
         if not logs:
@@ -1645,8 +1674,8 @@ def attendance_page() -> None:
     # 달력상의 7일·30일 평균 대신 실제 주일예배 회차를 기준으로 비교한다.
     recent_four = sunday_data.head(4)
     previous_four = sunday_data.iloc[4:8]
-    latest_total = int(sunday_data.iloc[0]["total_count"])
-    week_delta = latest_total - int(sunday_data.iloc[1]["total_count"]) if len(sunday_data) > 1 else None
+    _latest_total_int = int(sunday_data.iloc[0]["total_count"])
+    week_delta = _latest_total_int - int(sunday_data.iloc[1]["total_count"]) if len(sunday_data) > 1 else None
     recent_four_average = float(recent_four["total_count"].mean())
     recent_offline_average = float(recent_four["offline_count"].mean())
     four_week_delta = (
@@ -1853,15 +1882,24 @@ def bible_page() -> None:
     verse_by_id = {verse.reference.verse_id: verse for verse in verses}
     error_by_id = {reference.verse_id: message for reference, message in errors}
     for reference in references:
-        with st.container(border=True):
-            st.markdown(f"**{reference.display}**")
-            verse = verse_by_id.get(reference.verse_id)
-            if verse:
-                st.write(verse.content)
-            elif reference.verse_id in error_by_id:
-                st.warning(error_by_id[reference.verse_id])
-            else:
-                st.caption("본문 연결 대기")
+        verse = verse_by_id.get(reference.verse_id)
+        if verse:
+            st.markdown(
+                f'<div style="background:#FFFAF4;border:1.5px solid #E8CFA8;border-left:5px solid #FF8207;'
+                f'border-radius:14px;padding:.85rem 1rem .8rem;margin:.4rem 0;">'
+                f'<div style="color:#8B4A00;font-size:.8rem;font-weight:700;margin-bottom:.35rem;letter-spacing:.02em;">'
+                f'{html.escape(reference.display)}</div>'
+                f'<div style="color:#2C1F16;font-size:1.05rem;line-height:1.7;">{html.escape(verse.content)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            with st.container(border=True):
+                st.markdown(f"**{reference.display}**")
+                if reference.verse_id in error_by_id:
+                    st.warning(error_by_id[reference.verse_id])
+                else:
+                    st.caption("본문 연결 대기")
 
     if verses:
         st.subheader("한 번에 복사")
@@ -1882,6 +1920,14 @@ def bible_page() -> None:
     with st.expander("지원하는 입력 형식"):
         st.markdown("`창 1:1` · `창:1:1` · `창세기 1:1` · `창세기 1장 1절` · `행 7:2~3` · 여러 구절이 들어간 설교 문자")
         st.caption("입력한 문자는 저장하거나 수정하지 않으며, 인식한 구절만 화면에 정리합니다. 한 번에 최대 100개 구절을 확인합니다.")
+
+    st.markdown(
+        "<div style='margin-top:2.5rem;padding-top:.75rem;border-top:1px solid #EBD6C2;"
+        "text-align:center;color:#9C8476;font-size:.78rem;'>"
+        "성경 본문 출처: 개역개정판 © 대한성서공회"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def search_page() -> None:
