@@ -909,13 +909,13 @@ def dashboard_page() -> None:
     )
     _dash_stats = row(
         """SELECT
-            SUM(CASE WHEN t.status<>'DONE' AND ((t.due_date IS NOT NULL AND t.due_date<=:week_end) OR t.priority='HIGH') THEN 1 ELSE 0 END) AS action_count,
-            SUM(CASE WHEN t.status<>'DONE' AND t.due_date IS NOT NULL AND t.due_date<:today THEN 1 ELSE 0 END) AS overdue_count,
+            SUM(CASE WHEN t.status<>'DONE' AND ((t.due_date IS NOT NULL AND t.due_date<=?) OR t.priority='HIGH') THEN 1 ELSE 0 END) AS action_count,
+            SUM(CASE WHEN t.status<>'DONE' AND t.due_date IS NOT NULL AND t.due_date<? THEN 1 ELSE 0 END) AS overdue_count,
             SUM(CASE WHEN t.status='BLOCKED' THEN 1 ELSE 0 END) AS blocked_count,
             SUM(CASE WHEN t.status<>'DONE' AND t.priority='HIGH' AND COALESCE(TRIM(t.owner),'')='' THEN 1 ELSE 0 END) AS ownerless_high
         FROM tasks t JOIN events e ON e.id=t.event_id
         WHERE t.archived_at IS NULL AND e.archived_at IS NULL AND e.status NOT IN ('COMPLETED','CANCELLED')""",
-        {"week_end": week_end, "today": today},
+        (week_end, today),
     ) or {}
     action_count = int(_dash_stats.get("action_count") or 0)
     overdue_count = int(_dash_stats.get("overdue_count") or 0)
