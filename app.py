@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import html
 import hashlib
+import hmac
 import json
 import sys
 import zipfile
@@ -689,6 +690,13 @@ def service_account_secret(name: str) -> tuple[dict[str, object] | None, str]:
     return parsed, ""
 
 
+def text_secret(name: str) -> str:
+    try:
+        return str(st.secrets[name]).strip()
+    except (FileNotFoundError, KeyError, TypeError):
+        return ""
+
+
 @st.cache_data(show_spinner=False)
 def _cached_local_bible(data: bytes) -> LocalBible:
     return parse_local_bible(data)
@@ -750,6 +758,15 @@ def shared_review_board() -> None:
         + "</div>",
         unsafe_allow_html=True,
     )
+    if counts["CONFIRMED"]:
+        if st.button(
+            f"확인 완료 {counts['CONFIRMED']}건 보기 · 삭제 관리",
+            key="show_confirmed_review_items",
+            type="secondary",
+            width="stretch",
+        ):
+            st.session_state["review_status_filter"] = "확인 완료"
+            st.rerun()
 
     status_options = {
         "미완료 전체": "OPEN",
@@ -885,6 +902,68 @@ def shared_review_board() -> None:
                     except (ValueError, ReviewBoardConnectionError) as exc:
                         st.error(str(exc))
 
+            if item["status"] == "CONFIRMED":
+                delete_target_key = "review_item_delete_target"
+                if st.session_state.get(delete_target_key) != str(item["id"]):
+                    if st.button(
+                        "삭제",
+                        key=f"open_review_delete_{item['id']}",
+                        type="secondary",
+                        width="stretch",
+                    ):
+                        st.session_state[delete_target_key] = str(item["id"])
+                        st.rerun()
+                else:
+                    with st.form(f"review_delete_{item['id']}", border=True):
+                        configured_delete_pin = text_secret("REVIEW_BOARD_DELETE_PIN")
+                        st.warning(
+                            "이 확인사항을 목록에서 삭제합니다. 게시글·댓글·변경이력은 "
+                            "실수 복구와 백업을 위해 Google Sheets에 보존됩니다."
+                        )
+                        if not configured_delete_pin:
+                            st.error("관리 삭제번호가 설정되지 않아 삭제할 수 없습니다.")
+                        st.write(f"삭제 대상: **{item['title']}** · 댓글 {item['comment_count']}개")
+                        delete_author = st.text_input(
+                            "삭제자",
+                            value=st.session_state.get("operator_name", ""),
+                            placeholder="이름",
+                            key=f"review_delete_author_{item['id']}",
+                        )
+                        delete_pin = st.text_input(
+                            "관리 삭제번호",
+                            type="password",
+                            placeholder="Streamlit Secrets에 설정한 번호",
+                            key=f"review_delete_pin_{item['id']}",
+                            disabled=not configured_delete_pin,
+                        )
+                        delete_confirmed = st.checkbox(
+                            "확인 완료된 이 항목을 목록에서 삭제합니다.",
+                            key=f"review_delete_confirmed_{item['id']}",
+                        )
+                        cancel_col, confirm_col = st.columns(2)
+                        cancel_delete = cancel_col.form_submit_button("취소", width="stretch")
+                        confirm_delete = confirm_col.form_submit_button(
+                            "삭제 확정",
+                            type="primary",
+                            width="stretch",
+                            disabled=not (delete_confirmed and configured_delete_pin),
+                        )
+                        if cancel_delete:
+                            st.session_state.pop(delete_target_key, None)
+                            st.rerun()
+                        if confirm_delete:
+                            try:
+                                if not hmac.compare_digest(str(delete_pin or ""), configured_delete_pin):
+                                    raise ValueError("관리 삭제번호가 맞지 않습니다.")
+                                store.archive_item(str(item["id"]), delete_author)
+                                _cached_review_board_snapshot.clear()
+                                st.session_state.pop(delete_target_key, None)
+                                if st.session_state.get("expanded_review_item") == str(item["id"]):
+                                    st.session_state.pop("expanded_review_item", None)
+                                rerun("확인사항을 삭제했습니다. 기록은 Google Sheets에 안전하게 보존됩니다.")
+                            except (ValueError, ReviewBoardConnectionError) as exc:
+                                st.error(str(exc))
+
     st.divider()
     if st.button("＋ 새 확인사항 작성", key="open_review_item_form", type="primary", width="stretch"):
         st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
@@ -956,7 +1035,16 @@ def sidebar() -> str:
         st.markdown(f"## ⛪ {APP_TITLE}")
         st.caption("예배 운영 · 지식관리")
         st.markdown("---")
-        menu_items = ["대시보드", "팀 확인", "행사", "매뉴얼", "예배 인원 현황", "교회력", "성경 검색", "전체 검색", "결정·운영로그", "보관함", "데이터·백업"]
+        primary_menu_items = [
+            "대시보드",
+            "예배 인원 현황",
+            "팀 확인",
+            "행사",
+            "성경 검색",
+            "교회력",
+            "전체 검색",
+        ]
+        secondary_menu_items = ["매뉴얼", "결정·운영로그", "보관함", "데이터·백업"]
         menu_labels = {
             "대시보드": "🏠  대시보드",
             "팀 확인": "✅  팀 확인",
@@ -971,21 +1059,40 @@ def sidebar() -> str:
             "데이터·백업": "⚙️  데이터·백업",
         }
         pending_nav = st.session_state.pop("_navigate_to", None)
-        if pending_nav in menu_items:
+        if pending_nav in primary_menu_items:
             st.session_state["main_nav"] = pending_nav
+            st.session_state.pop("_secondary_nav", None)
+        elif pending_nav in secondary_menu_items:
+            st.session_state["_secondary_nav"] = pending_nav
+        if st.session_state.get("main_nav") not in primary_menu_items:
+            st.session_state["main_nav"] = "대시보드"
         nav = st.radio(
             "메뉴",
-            menu_items,
+            primary_menu_items,
             label_visibility="collapsed",
             key="main_nav",
             format_func=lambda value: menu_labels[value],
         )
+        previous_nav = st.session_state.get("_last_main_nav")
+        if previous_nav is not None and previous_nav != nav:
+            st.session_state.pop("_secondary_nav", None)
+        st.session_state["_last_main_nav"] = nav
+        with st.expander("매뉴얼·관리", expanded=st.session_state.get("_secondary_nav") is not None):
+            for page in secondary_menu_items:
+                marker = "• " if st.session_state.get("_secondary_nav") == page else ""
+                if st.button(
+                    marker + menu_labels[page],
+                    key=f"sidebar_secondary_{page}",
+                    width="stretch",
+                ):
+                    navigate(page)
         st.markdown("---")
         if st.session_state.pop("_clear_quick_search", False):
             st.session_state["quick_search"] = ""
         quick = st.text_input("빠른 검색", placeholder="세례, 성찬, 마이크…", key="quick_search")
         if quick:
             st.session_state["search_term"] = quick
+            st.session_state.pop("_secondary_nav", None)
             nav = "전체 검색"
         with st.expander("내 이름 설정"):
             st.text_input(
@@ -996,7 +1103,7 @@ def sidebar() -> str:
             )
         st.caption("원본 Sheets 읽기 전용 · 게시판 영구 저장")
         st.caption(f"버전 {APP_VERSION}")
-        return nav
+        return str(st.session_state.get("_secondary_nav") or nav)
 
 
 def review_board_page() -> None:
@@ -1474,23 +1581,26 @@ def events_page() -> None:
             "FROM event_templates LEFT JOIN task_templates ON task_templates.event_template_id=event_templates.id AND task_templates.data_quality<>'Stale' "
             "WHERE event_templates.status='CURRENT' GROUP BY event_templates.id ORDER BY event_templates.category,event_templates.title"
         )
-        template_frame = pd.DataFrame(templates)[
-            ["title", "category", "task_count", "unresolved_count", "source_sheet", "data_quality"]
-        ].rename(columns={
-            "title": "템플릿명",
-            "category": "분류",
-            "task_count": "업무 수",
-            "unresolved_count": "일정 확인 필요",
-            "source_sheet": "원본 시트",
-            "data_quality": "데이터 상태",
-        })
-        template_frame["데이터 상태"] = template_frame["데이터 상태"].map(quality_ko)
-        st.dataframe(
-            template_frame,
-            hide_index=True,
-            width="stretch",
-            height=320,
-        )
+        if templates:
+            template_frame = pd.DataFrame(templates)[
+                ["title", "category", "task_count", "unresolved_count", "source_sheet", "data_quality"]
+            ].rename(columns={
+                "title": "템플릿명",
+                "category": "분류",
+                "task_count": "업무 수",
+                "unresolved_count": "일정 확인 필요",
+                "source_sheet": "원본 시트",
+                "data_quality": "데이터 상태",
+            })
+            template_frame["데이터 상태"] = template_frame["데이터 상태"].map(quality_ko)
+            st.dataframe(
+                template_frame,
+                hide_index=True,
+                width="stretch",
+                height=320,
+            )
+        else:
+            st.info("등록된 행사 템플릿이 없습니다. 아래에서 새 템플릿을 만들 수 있습니다.")
         with st.expander("새 템플릿 만들기"):
             manuals = rows("SELECT id,title FROM manuals WHERE status='CURRENT' ORDER BY title")
             manual_map = {"연결 안 함": None, **{item["title"]: item["id"] for item in manuals}}

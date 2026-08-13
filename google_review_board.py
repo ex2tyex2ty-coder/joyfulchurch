@@ -128,6 +128,18 @@ def build_snapshot(
     }
 
 
+def _find_item_row(item_values: list[list[Any]], review_item_id: str) -> int | None:
+    """Return the 1-based Sheets row for an item identifier."""
+    return next(
+        (
+            index
+            for index, raw in enumerate(item_values, start=2)
+            if raw and str(raw[0]).strip() == str(review_item_id).strip()
+        ),
+        None,
+    )
+
+
 def filter_review_items(
     items: list[dict[str, Any]],
     status_filter: str = "OPEN",
@@ -451,3 +463,74 @@ class GoogleReviewBoardStore:
         except ReviewBoardConnectionError:
             pass
         return comment_id
+
+    def archive_item(self, review_item_id: str, author: str) -> None:
+        """Hide a completed board item without physically deleting its history."""
+        review_item_id = str(review_item_id).strip()
+        author = author.strip()
+        if not review_item_id or not author:
+            raise ValueError("삭제할 확인사항과 삭제자 이름을 확인하세요.")
+
+        with self._lock:
+            item_values, comment_values = self._raw_values()
+            snapshot = build_snapshot(item_values, comment_values, show_confirmed=True, limit=1_000_000)
+            item = next(
+                (value for value in snapshot["items"] if str(value["id"]) == review_item_id),
+                None,
+            )
+            if item is None:
+                # Treat an already archived item as a successful repeated request.
+                archived_item = next(
+                    (
+                        value
+                        for value in snapshot["raw_items"]
+                        if str(value.get("item_id", "")) == review_item_id
+                        and str(value.get("archived_at", "")).strip()
+                    ),
+                    None,
+                )
+                if archived_item is not None:
+                    return
+                raise ValueError("삭제할 확인사항을 찾을 수 없습니다.")
+            if str(item.get("status", "")) != "CONFIRMED":
+                raise ValueError("확인 완료된 항목만 삭제할 수 있습니다.")
+
+            item_row = _find_item_row(item_values, review_item_id)
+            if item_row is None:
+                raise ValueError("삭제할 확인사항의 원본 행을 찾을 수 없습니다.")
+
+            archived_at = _now()
+            self._execute(
+                self.service.spreadsheets().values().batchUpdate(
+                    spreadsheetId=self.spreadsheet_id,
+                    body={
+                        "valueInputOption": "RAW",
+                        "data": [
+                            {
+                                "range": f"'{ITEM_SHEET}'!F{item_row}:J{item_row}",
+                                "values": [[
+                                    author[:80],
+                                    item.get("created_at", ""),
+                                    archived_at,
+                                    item.get("confirmed_at", ""),
+                                    archived_at,
+                                ]],
+                            }
+                        ],
+                    },
+                )
+            )
+            try:
+                self._audit(
+                    "review_item",
+                    review_item_id,
+                    "ARCHIVE",
+                    author[:80],
+                    before_status=str(item.get("status", "")),
+                    after_status="ARCHIVED",
+                    details=str(item.get("title", ""))[:500],
+                )
+            except ReviewBoardConnectionError:
+                # The archived_at value is authoritative; audit failure must not
+                # invite a second destructive-looking request.
+                pass
