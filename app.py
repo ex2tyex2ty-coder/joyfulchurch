@@ -33,7 +33,6 @@ from bible_lookup import (
     BibleReference,
     BibleVerse,
     LocalBible,
-    decode_text_file,
     extract_bible_references,
     fetch_local_bible_verse,
     parse_local_bible,
@@ -1597,17 +1596,17 @@ def logs_page() -> None:
 
 
 def attendance_page() -> None:
-    hero("예배 인원 현황", "가장 최근 주일예배 인원과 기간별 변화를 확인합니다.")
+    hero("예배 인원 현황", "주일예배를 기준으로 최근 집계와 회차별 변화를 확인합니다.")
     data = pd.DataFrame(rows("SELECT * FROM attendance ORDER BY service_date"))
     if data.empty:
         st.info("예배 인원 데이터가 없습니다.")
         return
     data["service_date"] = pd.to_datetime(data["service_date"])
     data["month"] = data["service_date"].dt.to_period("M").astype(str)
-    missing_count = int((data["total_count"] <= 0).sum())
     analysis_data = data[data["total_count"] > 0].copy()
 
     sunday_data = analysis_data[analysis_data["service_type"] == "주일예배"].sort_values("service_date", ascending=False)
+    missing_sunday_count = int(((data["service_type"] == "주일예배") & (data["total_count"] <= 0)).sum())
     st.subheader("최근 주일예배")
     if sunday_data.empty:
         st.info("집계가 완료된 주일예배 인원 기록이 없습니다.")
@@ -1640,49 +1639,61 @@ def attendance_page() -> None:
             pending_date = newer_unreported.iloc[0]["service_date"].strftime("%Y.%m.%d")
             st.caption(f"{pending_date} 주일예배는 인원이 아직 입력되지 않아 최근 집계 완료 기록을 표시했습니다.")
 
-    st.subheader("기간별 인원 추이")
-    min_date, max_date = data["service_date"].min().date(), data["service_date"].max().date()
-    period_presets = {"8주": 56, "3개월": 92, "1년": 365, "전체": None}
-    preset = st.radio("빠른 기간", list(period_presets), horizontal=True, key="attendance_period_preset")
-    preset_days = period_presets[preset]
-    preset_start = min_date if preset_days is None else max(min_date, max_date - timedelta(days=preset_days))
-    f1, f2 = st.columns([1.3, 1])
-    period = f1.date_input("기간", value=(preset_start, max_date), min_value=min_date, max_value=max_date, key=f"attendance_period_{preset}")
-    types = sorted(data["service_type"].dropna().unique().tolist())
-    default_types = ["주일예배"] if "주일예배" in types else types[:1]
-    chosen = f2.multiselect("예배 종류", types, default=default_types)
-    if isinstance(period, tuple) and len(period) == 2:
-        filtered = analysis_data[(analysis_data["service_date"].dt.date >= period[0]) & (analysis_data["service_date"].dt.date <= period[1])]
-    else:
-        filtered = analysis_data
-    filtered = filtered[filtered["service_type"].isin(chosen)]
-    if missing_count:
-        st.caption(f"미집계 또는 0명 여부 확인이 필요한 {missing_count}건은 통계 계산에서 제외하고 원본 기록은 보존했습니다.")
-    if filtered.empty:
-        st.warning("선택한 조건에 데이터가 없습니다.")
+    if sunday_data.empty:
         return
+
+    # 달력상의 7일·30일 평균 대신 실제 주일예배 회차를 기준으로 비교한다.
+    recent_four = sunday_data.head(4)
+    previous_four = sunday_data.iloc[4:8]
+    latest_total = int(sunday_data.iloc[0]["total_count"])
+    week_delta = latest_total - int(sunday_data.iloc[1]["total_count"]) if len(sunday_data) > 1 else None
+    recent_four_average = float(recent_four["total_count"].mean())
+    recent_offline_average = float(recent_four["offline_count"].mean())
+    four_week_delta = (
+        recent_four_average - float(previous_four["total_count"].mean())
+        if len(previous_four) == 4
+        else None
+    )
     stats = [
-        ("평균 총인원", f"{filtered['total_count'].mean():.1f}명"),
-        ("평균 현장", f"{filtered['offline_count'].mean():.1f}명"),
-        ("최고 인원", f"{int(filtered['total_count'].max())}명"),
-        ("최저 인원", f"{int(filtered['total_count'].min())}명"),
+        ("전주 대비", f"{week_delta:+d}명" if week_delta is not None else "비교 없음"),
+        ("최근 4회 평균", f"{recent_four_average:.1f}명"),
+        ("최근 4회 현장 평균", f"{recent_offline_average:.1f}명"),
+        ("직전 4회 평균 대비", f"{four_week_delta:+.1f}명" if four_week_delta is not None else "비교 없음"),
     ]
     compact_stats(stats, columns=4)
+
+    st.subheader("주일예배 회차별 추이")
+    count_presets = {"최근 8회": 8, "최근 12회": 12, "최근 26회": 26, "최근 52회": 52, "전체": None}
+    selected_count = st.radio("표시 범위", list(count_presets), horizontal=True, key="sunday_attendance_count")
+    count_limit = count_presets[selected_count]
+    filtered = sunday_data if count_limit is None else sunday_data.head(count_limit)
+    filtered = filtered.sort_values("service_date")
+    if missing_sunday_count:
+        st.caption(f"인원이 아직 집계되지 않은 주일예배 {missing_sunday_count}건은 계산에서 제외하고 원본 기록은 보존했습니다.")
     trend = filtered.sort_values(["service_date", "service_type"])
     fig = px.line(
         trend,
         x="service_date",
         y="total_count",
-        color="service_type",
         markers=True,
-        labels={"service_date": "예배일", "service_type": "예배", "total_count": "인원"},
+        labels={"service_date": "주일예배일", "total_count": "총인원"},
     )
-    fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), legend_title_text="", hovermode="x unified", height=330)
+    fig.update_traces(line_color="#C4510B")
+    fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), showlegend=False, hovermode="x unified", height=330)
     st.plotly_chart(fig, width="stretch")
-    with st.expander("상세 통계·데이터 품질"):
-        st.subheader("예배 종류별")
-        summary = filtered.groupby("service_type", as_index=False).agg(기록수=("id", "count"), 평균=("total_count", "mean"), 현장평균=("offline_count", "mean"), 온라인평균=("online_count", "mean"))
-        st.dataframe(summary.style.format({"평균": "{:.1f}", "현장평균": "{:.1f}", "온라인평균": "{:.1f}"}), hide_index=True, width="stretch", height=220)
+
+    with st.expander("주일예배 상세 기록·데이터 품질"):
+        sunday_detail = filtered.sort_values("service_date", ascending=False)[
+            ["service_date", "offline_count", "online_count", "total_count", "notes"]
+        ].rename(columns={
+            "service_date": "주일예배일",
+            "offline_count": "현장",
+            "online_count": "온라인",
+            "total_count": "총인원",
+            "notes": "비고",
+        })
+        sunday_detail["주일예배일"] = sunday_detail["주일예배일"].dt.strftime("%Y.%m.%d")
+        st.dataframe(sunday_detail, hide_index=True, width="stretch", height=300)
         st.subheader("데이터 품질")
         quality = data.groupby("data_quality", as_index=False).size()
         quality["data_quality"] = quality["data_quality"].map(quality_ko)
@@ -1704,16 +1715,58 @@ def attendance_page() -> None:
                 width="stretch",
                 height=240,
             )
+
+    other_types = [value for value in sorted(data["service_type"].dropna().unique().tolist()) if value != "주일예배"]
+    if other_types:
+        with st.expander("다른 예배 기록 보기 · 보조 자료"):
+            st.caption("대표 지표와 평균 계산은 주일예배만 사용합니다. 다른 예배는 필요할 때 개별 기록으로 확인합니다.")
+            other_type = st.selectbox("예배 종류", other_types, key="secondary_attendance_type")
+            other_records = analysis_data[analysis_data["service_type"] == other_type].sort_values("service_date", ascending=False).head(12)
+            other_detail = other_records[["service_date", "offline_count", "online_count", "total_count", "notes"]].copy()
+            other_detail["service_date"] = other_detail["service_date"].dt.strftime("%Y.%m.%d")
+            st.dataframe(
+                other_detail.rename(columns={
+                    "service_date": "예배일",
+                    "offline_count": "현장",
+                    "online_count": "온라인",
+                    "total_count": "총인원",
+                    "notes": "비고",
+                }),
+                hide_index=True,
+                width="stretch",
+                height=300,
+            )
     st.caption("통계의 변화는 운영 이벤트와 함께 참고할 수 있지만, 자동으로 인과관계를 주장하지 않습니다.")
 
 
 def bible_page() -> None:
     hero("성경 검색", "저장된 성경 TXT에서 구절을 찾아 설교용 본문으로 정리합니다.")
 
+    source_text = st.text_area(
+        "성경 구절 또는 설교 문자",
+        height=210,
+        placeholder=(
+            "짧게 검색: 창 1:1 또는 행 7:2~3\n"
+            "붙여 써도 됩니다: 창:1:1\n\n"
+            "또는 받은 문자를 그대로 붙여넣으세요.\n"
+            "[설교 인용 구절]\n"
+            "열왕기상 19장 4절\n마태복음 6장 1절\n시편 103편 14절"
+        ),
+        key="bible_source_text",
+        help="창 1:1, 창:1:1, 창세기 1:1, 창세기 1장 1절, 행 7:2~3 형식을 모두 인식합니다.",
+    )
+    submitted = st.button("구절 찾기", type="primary", width="stretch")
+
     bible_label = "저장된 성경 TXT"
     local_bible: LocalBible | None = None
-    local_source = None
-    with st.expander("성경 전체 본문 교체"):
+    if BIBLE_TEXT_PATH.exists():
+        try:
+            local_bible = _cached_local_bible(BIBLE_TEXT_PATH.read_bytes())
+            bible_label = "개역개정판"
+        except (OSError, ValueError) as exc:
+            st.warning(f"저장된 성경 전체 본문을 읽지 못했습니다: {exc}")
+
+    with st.expander("관리자 · 성경 원본 교체"):
         st.caption("기본 저장된 성경 대신 다른 전체 본문을 이번 접속에서만 사용할 때 선택합니다.")
         local_source = st.file_uploader(
             "다른 성경 전체 본문 TXT",
@@ -1733,61 +1786,15 @@ def bible_page() -> None:
                 if st.session_state.get("_bible_corpus_hash") != local_hash:
                     st.session_state["_bible_corpus_hash"] = local_hash
                     st.session_state.pop("bible_lookup_result", None)
-                st.success(
-                    f"{bible_label} · {local_bible.book_count}권 {len(local_bible.verses):,}절을 검색 자료로 연결했습니다."
-                )
                 if local_bible.invalid_line_count:
                     st.warning(f"형식을 읽지 못한 행 {local_bible.invalid_line_count}개는 검색에서 제외했습니다.")
             except ValueError as exc:
                 st.error(str(exc))
 
-    if local_bible is None and BIBLE_TEXT_PATH.exists():
-        try:
-            local_bible = _cached_local_bible(BIBLE_TEXT_PATH.read_bytes())
-            bible_label = "개역개정판"
-            st.success(f"기본 성경 · {local_bible.book_count}권 {len(local_bible.verses):,}절 연결됨")
-        except (OSError, ValueError) as exc:
-            st.warning(f"저장된 성경 전체 본문을 읽지 못했습니다: {exc}")
-
     if local_bible is not None:
-        st.caption("연결된 성경 전체 본문을 기준으로 검색합니다.")
+        st.caption(f"{bible_label} · {local_bible.book_count}권 {len(local_bible.verses):,}절 연결됨")
     else:
-        st.warning("성경 전체 본문 TXT가 연결되지 않았습니다. 위의 ‘성경 전체 본문 교체’에서 파일을 올려 주세요.")
-
-    uploaded_text = st.file_uploader(
-        "찾을 구절 목록 TXT (선택)",
-        type=["txt"],
-        help="설교 문자나 찾을 구절 목록입니다. UTF-8 또는 윈도우 한글 메모장 형식을 지원하며 저장하지 않습니다.",
-        key="bible_text_upload",
-    )
-    if uploaded_text is not None:
-        uploaded_bytes = uploaded_text.getvalue()
-        if len(uploaded_bytes) > 2 * 1024 * 1024:
-            st.error("TXT 파일은 2MB 이하만 사용할 수 있습니다.")
-        else:
-            upload_hash = hashlib.sha256(uploaded_bytes).hexdigest()
-            if st.session_state.get("_bible_upload_hash") != upload_hash:
-                try:
-                    st.session_state["bible_source_text"] = decode_text_file(uploaded_bytes)
-                    st.session_state["_bible_upload_hash"] = upload_hash
-                    st.session_state.pop("bible_lookup_result", None)
-                    st.toast(f"{uploaded_text.name} 내용을 불러왔습니다.")
-                except ValueError as exc:
-                    st.error(str(exc))
-
-    source_text = st.text_area(
-        "성경 구절 또는 설교 문자",
-        height=210,
-        placeholder=(
-            "짧게 검색: 창:1:1 또는 행 7:2~3\n\n"
-            "또는 받은 문자를 그대로 붙여넣으세요.\n"
-            "[설교 인용 구절]\n"
-            "열왕기상 19장 4절\n마태복음 6장 1절\n시편 103편 14절"
-        ),
-        key="bible_source_text",
-        help="창:1:1, 창세기 1장 1절, 행 7:2~3, 사도행전 7장 2~3절 형식을 모두 인식합니다.",
-    )
-    submitted = st.button("구절 찾기", type="primary", width="stretch")
+        st.warning("성경 전체 본문 TXT가 없습니다. 관리자 항목에서 파일을 연결해 주세요.")
 
     if submitted:
         all_references = extract_bible_references(source_text, limit=101)
@@ -1873,8 +1880,8 @@ def bible_page() -> None:
         )
 
     with st.expander("지원하는 입력 형식"):
-        st.markdown("`창:1:1` · `창세기 1장 1절` · `행 7:2~3` · `사도행전 7장 2~3절` · 여러 구절이 들어간 설교 문자")
-        st.caption("입력한 문자와 TXT 파일은 저장하거나 수정하지 않으며, 인식한 구절만 화면에 정리합니다. 한 번에 최대 100개 구절을 확인합니다.")
+        st.markdown("`창 1:1` · `창:1:1` · `창세기 1:1` · `창세기 1장 1절` · `행 7:2~3` · 여러 구절이 들어간 설교 문자")
+        st.caption("입력한 문자는 저장하거나 수정하지 않으며, 인식한 구절만 화면에 정리합니다. 한 번에 최대 100개 구절을 확인합니다.")
 
 
 def search_page() -> None:
