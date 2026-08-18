@@ -51,6 +51,7 @@ from db import (
     carry_review_issue,
     clone_event,
     create_review_item,
+    create_sqlite_backup,
     create_event,
     create_event_template,
     create_manual,
@@ -69,6 +70,7 @@ from db import (
     verify_manual,
 )
 from migration import migrate
+from time_utils import today_kst
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="⛪", layout="wide", initial_sidebar_state="auto")
@@ -129,8 +131,8 @@ h1,h2,h3,h4,h5,h6 { color:#2C1F16 !important; letter-spacing:-.02em; }
 a { color:#AD4700; }
 .ops-hero { background:linear-gradient(135deg,#FF9420 0%,#FF6B00 60%,#D94E00 100%); color:#2C1F16; border-radius:22px; padding:1.5rem 1.6rem; margin-bottom:1.2rem; box-shadow:0 12px 32px rgba(184,75,0,.22),0 2px 8px rgba(184,75,0,.12); position:relative; overflow:hidden; }
 .ops-hero::after { content:''; position:absolute; top:-30px; right:-20px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.08); pointer-events:none; }
-.ops-hero h1 { color:#FFF8F0 !important; -webkit-text-fill-color:#FFF8F0 !important; margin:0; font-size:1.9rem; font-weight:900; letter-spacing:-.03em; }
-.ops-hero p { color:rgba(255,248,240,.85) !important; -webkit-text-fill-color:rgba(255,248,240,.85) !important; margin:.4rem 0 0; opacity:1 !important; font-size:.97rem; }
+.ops-hero h1 { color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; margin:0; font-size:1.9rem; font-weight:900; letter-spacing:-.03em; }
+.ops-hero p { color:#4A2E1C !important; -webkit-text-fill-color:#4A2E1C !important; margin:.4rem 0 0; opacity:1 !important; font-size:.97rem; }
 .ops-card { background:white; border:1px solid #EBD6C2; border-radius:18px; padding:1.1rem 1.15rem; min-height:110px; box-shadow:0 2px 8px rgba(88,52,24,.06); transition:box-shadow .2s; }
 .ops-card:hover { box-shadow:0 6px 20px rgba(88,52,24,.12); }
 .ops-card .label { color:#6B584B; font-size:.82rem; margin-bottom:.25rem; font-weight:600; letter-spacing:.01em; }
@@ -166,7 +168,7 @@ a { color:#AD4700; }
 .st-key-dashboard_attendance_summary button p { text-align:left !important; }
 .ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1.1rem; padding-bottom:.9rem; border-bottom:2px solid #EBD6C2; }
 .ops-dashboard-head h1 { margin:0; font-size:1.8rem; font-weight:900; letter-spacing:-.03em; }
-.ops-dashboard-head span { color:#735F50; font-size:.88rem; white-space:nowrap; background:#F5EDE3; padding:.25rem .6rem; border-radius:999px; font-weight:600; }
+.ops-dashboard-head > span { color:#735F50; font-size:.88rem; white-space:nowrap; background:#F5EDE3; padding:.25rem .6rem; border-radius:999px; font-weight:600; }
 .ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#FFF0DE; color:#963D00 !important; -webkit-text-fill-color:#963D00 !important; margin-right:.25rem; }
 .ops-badge.warn { background:#FFF1DB; color:#7A4800 !important; -webkit-text-fill-color:#7A4800 !important; }
 .ops-badge.danger { background:#FCE8E6; color:#8F2F28 !important; -webkit-text-fill-color:#8F2F28 !important; }
@@ -273,9 +275,9 @@ code, pre { background:#FFF3E7 !important; color:#30251D !important; }
 }
 @media (max-width: 768px) {
   [data-testid="stSidebar"] {
-    width:min(15.25rem, 63vw) !important;
-    min-width:min(15.25rem, 63vw) !important;
-    max-width:min(15.25rem, 63vw) !important;
+    width:min(13.75rem, 56vw) !important;
+    min-width:min(13.75rem, 56vw) !important;
+    max-width:min(13.75rem, 56vw) !important;
   }
   [data-testid="stSidebar"] > div:first-child,
   [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
@@ -311,7 +313,7 @@ code, pre { background:#FFF3E7 !important; color:#30251D !important; }
   .ops-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .review-stat-grid { grid-template-columns:repeat(4,minmax(0,1fr)); gap:.3rem; }
   .review-stat { min-height:68px; border-radius:10px; padding:.45rem .12rem; }
-  .review-stat .label { font-size:.72rem; }
+  .review-stat .label { font-size:.76rem; }
   .review-stat .value { font-size:1.15rem; }
   .compact-stat-grid { gap:.3rem; }
   .compact-stat { min-height:66px; border-radius:10px; padding:.4rem .12rem; }
@@ -383,7 +385,7 @@ def compact_stats(metrics: list[tuple[str, object]], columns: int = 4) -> None:
 
 
 def dashboard_header() -> None:
-    today_label = date.today().strftime("%Y.%m.%d")
+    today_label = today_kst().strftime("%Y.%m.%d")
     st.markdown(
         f'<div class="ops-dashboard-head"><h1>예배 운영 대시보드</h1><span>{today_label} 기준</span></div>',
         unsafe_allow_html=True,
@@ -434,7 +436,7 @@ def search_excerpt(value: str | None, term: str, width: int = 280) -> str:
 def dday(event_date: str | None) -> str:
     if not event_date:
         return "날짜 미정"
-    delta = (date.fromisoformat(event_date) - date.today()).days
+    delta = (date.fromisoformat(event_date) - today_kst()).days
     if delta == 0:
         return "D-Day"
     return f"D-{delta}" if delta > 0 else f"D+{abs(delta)}"
@@ -464,6 +466,8 @@ def _attendance_frame() -> pd.DataFrame:
         return data
     data["service_date"] = pd.to_datetime(data["service_date"], errors="coerce").dt.normalize()
     data = data[data["service_date"].notna()].copy()
+    compact_service_type = data["service_type"].fillna("").astype(str).str.replace(r"\s+", "", regex=True)
+    data.loc[compact_service_type == "주일예배", "service_type"] = "주일예배"
     for column in ("online_count", "offline_count", "total_count"):
         if column not in data.columns:
             data[column] = pd.NA
@@ -500,7 +504,7 @@ def _attendance_frame() -> pd.DataFrame:
 
 def _last_elapsed_sunday(base_date: date | None = None) -> date:
     """Return the most recent Sunday that has fully elapsed."""
-    base_date = base_date or date.today()
+    base_date = base_date or today_kst()
     days_since_sunday = (base_date.weekday() - 6) % 7
     if days_since_sunday == 0:
         days_since_sunday = 7
@@ -549,7 +553,7 @@ def _scheduled_sunday_trend(sunday: pd.DataFrame, count_limit: int | None) -> pd
     counted = sunday[sunday["_counted"]]
     if not counted.empty:
         latest_counted_date = counted["service_date"].max().date()
-        if latest_counted_date <= date.today():
+        if latest_counted_date <= today_kst():
             last_elapsed = max(last_elapsed, latest_counted_date)
     if count_limit is None:
         first_date = sunday["service_date"].min().date() if not sunday.empty else last_elapsed
@@ -697,6 +701,60 @@ def text_secret(name: str) -> str:
         return ""
 
 
+ACCESS_LEVELS = {"VIEWER": 0, "TEAM": 1, "ADMIN": 2}
+ACCESS_LABELS = {"VIEWER": "일반 열람", "TEAM": "팀원", "ADMIN": "관리자"}
+
+
+def current_access_role() -> str:
+    role = str(st.session_state.get("_access_role") or "VIEWER")
+    return role if role in ACCESS_LEVELS else "VIEWER"
+
+
+def has_access(required: str = "TEAM") -> bool:
+    return ACCESS_LEVELS[current_access_role()] >= ACCESS_LEVELS[required]
+
+
+def access_required(required: str, action: str) -> bool:
+    """Show a concise permission notice and return whether the action is allowed."""
+    if has_access(required):
+        return True
+    st.info(f"{action}은(는) {ACCESS_LABELS[required]} 권한으로 로그인하면 사용할 수 있습니다.")
+    return False
+
+
+def access_control() -> None:
+    """Session-scoped PIN login. Secrets are compared only on the server."""
+    team_pin = text_secret("TEAM_ACCESS_PIN")
+    admin_pin = text_secret("ADMIN_ACCESS_PIN") or text_secret("REVIEW_BOARD_DELETE_PIN")
+    role = current_access_role()
+    with st.expander(f"접근 권한 · {ACCESS_LABELS[role]}"):
+        if role != "VIEWER":
+            st.success(f"{ACCESS_LABELS[role]} 권한으로 사용 중입니다.")
+            if st.button("로그아웃", key="access_logout", width="stretch"):
+                st.session_state["_access_role"] = "VIEWER"
+                st.session_state.pop("access_pin", None)
+                rerun("일반 열람 모드로 전환했습니다.")
+            return
+        if not team_pin and not admin_pin:
+            st.caption("접근번호가 설정되지 않아 안전한 읽기 전용으로 열립니다.")
+            return
+        entered = st.text_input(
+            "팀 접근번호",
+            type="password",
+            key="access_pin",
+            placeholder="접근번호 입력",
+            label_visibility="collapsed",
+        )
+        if st.button("권한 확인", key="access_login", type="primary", width="stretch"):
+            if admin_pin and hmac.compare_digest(str(entered or ""), admin_pin):
+                st.session_state["_access_role"] = "ADMIN"
+                rerun("관리자 권한으로 로그인했습니다.")
+            if team_pin and hmac.compare_digest(str(entered or ""), team_pin):
+                st.session_state["_access_role"] = "TEAM"
+                rerun("팀원 권한으로 로그인했습니다.")
+            st.error("접근번호가 맞지 않습니다.")
+
+
 @st.cache_data(show_spinner=False)
 def _cached_local_bible(data: bytes) -> LocalBible:
     return parse_local_bible(data)
@@ -713,27 +771,79 @@ def review_board_store() -> tuple[GoogleReviewBoardStore | None, str]:
         return None, str(exc)
 
 
+@st.dialog("댓글·진행 상태")
+def review_reply_dialog(
+    store: GoogleReviewBoardStore,
+    item: dict[str, object],
+    comments: list[dict[str, object]],
+) -> None:
+    st.markdown(f"**{item['title']}**")
+    with st.form(f"review_reply_dialog_{item['id']}", clear_on_submit=True):
+        reply_author = st.text_input(
+            "작성자",
+            value=st.session_state.get("operator_name", ""),
+            placeholder="이름",
+        )
+        reply_body = st.text_area("댓글 또는 답글", placeholder="확인한 내용이나 진행 상황을 남겨주세요.")
+        parent_options = {"게시글에 새 댓글": ""}
+        for comment in comments:
+            body_preview = " ".join(str(comment.get("body") or "").split())[:28]
+            comment_id = str(comment.get("comment_id") or "")
+            parent_options[f"{comment.get('author') or '이름 없음'} · {body_preview}"] = comment_id
+        parent_label = st.selectbox("답글 대상", list(parent_options))
+        statuses = list(REVIEW_STATUS_LABELS)
+        next_status = st.selectbox(
+            "댓글 등록 후 상태",
+            statuses,
+            index=statuses.index(str(item["status"])),
+            format_func=lambda value: REVIEW_STATUS_LABELS[value],
+        )
+        if st.form_submit_button("댓글 등록", type="primary", width="stretch"):
+            try:
+                store.add_comment(
+                    str(item["id"]),
+                    reply_author,
+                    reply_body,
+                    next_status,
+                    parent_comment_id=parent_options[parent_label] or None,
+                )
+                _cached_review_board_snapshot.clear()
+                st.session_state["expanded_review_item"] = str(item["id"])
+                rerun("댓글과 진행 상태를 반영했습니다.")
+            except (ValueError, ReviewBoardConnectionError) as exc:
+                st.error(str(exc))
+
+
 def shared_review_board() -> None:
     store, connection_error = review_board_store()
     if store is None:
         st.markdown("#### 팀 확인 게시판")
-        st.error("Google Sheets 영구 저장소에 연결되지 않아 등록 기능을 잠시 중지했습니다.")
-        st.caption(connection_error)
+        st.error("팀 확인 게시판을 잠시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        if has_access("ADMIN"):
+            st.caption(connection_error)
+        if st.button("다시 시도", key="review_board_retry_no_store", width="stretch"):
+            _cached_review_board_store.clear()
+            _cached_review_board_snapshot.clear()
+            st.rerun()
         return
 
     try:
         snapshot = _cached_review_board_snapshot(REVIEW_BOARD_SPREADSHEET_ID, store, True, 500)
     except ReviewBoardConnectionError as exc:
         st.markdown("#### 팀 확인 게시판")
-        st.error("Google Sheets 영구 저장소를 읽을 수 없어 등록 기능을 잠시 중지했습니다.")
-        st.caption(str(exc))
+        st.error("팀 확인 게시판을 잠시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        if has_access("ADMIN"):
+            st.caption(str(exc))
+        if st.button("다시 시도", key="review_board_retry_snapshot", width="stretch"):
+            _cached_review_board_snapshot.clear()
+            st.rerun()
         return
 
     counts = {status: int(snapshot["counts"].get(status, 0)) for status in REVIEW_STATUS_LABELS}
     active_count = counts["REVIEW_REQUIRED"] + counts["IN_PROGRESS"]
     overdue_count = sum(
         1 for item in snapshot["items"]
-        if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < date.today().isoformat()
+        if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < today_kst().isoformat()
     )
 
     title_col, action_col = st.columns([0.62, 0.38])
@@ -760,7 +870,7 @@ def shared_review_board() -> None:
     )
     if counts["CONFIRMED"]:
         if st.button(
-            f"확인 완료 {counts['CONFIRMED']}건 보기 · 삭제 관리",
+            f"확인 완료 {counts['CONFIRMED']}건 보기 · 보관 관리",
             key="show_confirmed_review_items",
             type="secondary",
             width="stretch",
@@ -806,7 +916,7 @@ def shared_review_board() -> None:
     review_items.sort(
         key=lambda item: (
             priority_rank.get(str(item.get("priority")), 9),
-            0 if item.get("due_date") and str(item["due_date"]) < date.today().isoformat() and item.get("status") != "CONFIRMED" else 1,
+            0 if item.get("due_date") and str(item["due_date"]) < today_kst().isoformat() and item.get("status") != "CONFIRMED" else 1,
             str(item.get("due_date") or "9999-12-31"),
         )
     )
@@ -834,7 +944,7 @@ def shared_review_board() -> None:
             if item.get("owner"):
                 details.append(f"담당 {item['owner']}")
             if item.get("due_date"):
-                due_state = "기한 지남" if str(item["due_date"]) < date.today().isoformat() and item["status"] != "CONFIRMED" else "기한"
+                due_state = "기한 지남" if str(item["due_date"]) < today_kst().isoformat() and item["status"] != "CONFIRMED" else "기한"
                 details.append(f"{due_state} {item['due_date']}")
             if details:
                 st.caption(" · ".join(details))
@@ -856,57 +966,20 @@ def shared_review_board() -> None:
                     )
                     st.write(comment["body"])
 
-            with st.form(f"review_reply_{item['id']}", clear_on_submit=True):
-                reply_author = st.text_input(
-                    "작성자",
-                    value=st.session_state.get("operator_name", ""),
-                    placeholder="이름",
-                    key=f"review_author_{item['id']}",
-                )
-                reply_body = st.text_area(
-                    "댓글 또는 답글",
-                    placeholder="확인한 내용이나 진행 상황을 남겨주세요.",
-                    key=f"review_body_{item['id']}",
-                )
-                parent_options = {"게시글에 새 댓글": ""}
-                for comment in comments:
-                    body_preview = " ".join(str(comment.get("body") or "").split())[:28]
-                    comment_id = str(comment.get("comment_id") or "")
-                    parent_options[f"{comment.get('author') or '이름 없음'} · {body_preview} · {comment_id[:6]}"] = comment_id
-                parent_label = st.selectbox(
-                    "답글 대상",
-                    list(parent_options),
-                    key=f"review_parent_{item['id']}",
-                    help="기존 댓글을 선택하면 그 댓글에 답글로 연결됩니다.",
-                )
-                statuses = list(REVIEW_STATUS_LABELS)
-                next_status = st.selectbox(
-                    "댓글 등록 후 상태",
-                    statuses,
-                    index=statuses.index(item["status"]),
-                    format_func=lambda value: REVIEW_STATUS_LABELS[value],
-                    key=f"review_status_{item['id']}",
-                )
-                if st.form_submit_button("댓글 등록", type="primary", width="stretch"):
-                    try:
-                        store.add_comment(
-                            str(item["id"]),
-                            reply_author,
-                            reply_body,
-                            next_status,
-                            parent_comment_id=parent_options[parent_label] or None,
-                        )
-                        _cached_review_board_snapshot.clear()
-                        st.session_state["expanded_review_item"] = str(item["id"])
-                        rerun("댓글과 진행 상태를 반영했습니다.")
-                    except (ValueError, ReviewBoardConnectionError) as exc:
-                        st.error(str(exc))
+            if has_access("TEAM"):
+                if st.button(
+                    "댓글·진행 상태 남기기",
+                    key=f"open_review_reply_{item['id']}",
+                    type="primary",
+                    width="stretch",
+                ):
+                    review_reply_dialog(store, item, comments)
 
-            if item["status"] == "CONFIRMED":
+            if item["status"] == "CONFIRMED" and has_access("ADMIN"):
                 delete_target_key = "review_item_delete_target"
                 if st.session_state.get(delete_target_key) != str(item["id"]):
                     if st.button(
-                        "삭제",
+                        "보관",
                         key=f"open_review_delete_{item['id']}",
                         type="secondary",
                         width="stretch",
@@ -915,60 +988,56 @@ def shared_review_board() -> None:
                         st.rerun()
                 else:
                     with st.form(f"review_delete_{item['id']}", border=True):
-                        configured_delete_pin = text_secret("REVIEW_BOARD_DELETE_PIN")
                         st.warning(
-                            "이 확인사항을 목록에서 삭제합니다. 게시글·댓글·변경이력은 "
+                            "이 확인사항을 현재 목록에서 보관합니다. 게시글·댓글·변경이력은 "
                             "실수 복구와 백업을 위해 Google Sheets에 보존됩니다."
                         )
-                        if not configured_delete_pin:
-                            st.error("관리 삭제번호가 설정되지 않아 삭제할 수 없습니다.")
-                        st.write(f"삭제 대상: **{item['title']}** · 댓글 {item['comment_count']}개")
+                        st.write(f"보관 대상: **{item['title']}** · 댓글 {item['comment_count']}개")
                         delete_author = st.text_input(
-                            "삭제자",
+                            "보관한 사람",
                             value=st.session_state.get("operator_name", ""),
                             placeholder="이름",
                             key=f"review_delete_author_{item['id']}",
                         )
-                        delete_pin = st.text_input(
-                            "관리 삭제번호",
-                            type="password",
-                            placeholder="Streamlit Secrets에 설정한 번호",
-                            key=f"review_delete_pin_{item['id']}",
-                            disabled=not configured_delete_pin,
-                        )
                         delete_confirmed = st.checkbox(
-                            "확인 완료된 이 항목을 목록에서 삭제합니다.",
+                            "확인 완료된 이 항목을 현재 목록에서 보관합니다.",
                             key=f"review_delete_confirmed_{item['id']}",
                         )
                         cancel_col, confirm_col = st.columns(2)
                         cancel_delete = cancel_col.form_submit_button("취소", width="stretch")
                         confirm_delete = confirm_col.form_submit_button(
-                            "삭제 확정",
+                            "보관 확정",
                             type="primary",
                             width="stretch",
-                            disabled=not (delete_confirmed and configured_delete_pin),
+                            disabled=not delete_confirmed,
                         )
                         if cancel_delete:
                             st.session_state.pop(delete_target_key, None)
                             st.rerun()
                         if confirm_delete:
                             try:
-                                if not hmac.compare_digest(str(delete_pin or ""), configured_delete_pin):
-                                    raise ValueError("관리 삭제번호가 맞지 않습니다.")
                                 store.archive_item(str(item["id"]), delete_author)
                                 _cached_review_board_snapshot.clear()
                                 st.session_state.pop(delete_target_key, None)
                                 if st.session_state.get("expanded_review_item") == str(item["id"]):
                                     st.session_state.pop("expanded_review_item", None)
-                                rerun("확인사항을 삭제했습니다. 기록은 Google Sheets에 안전하게 보존됩니다.")
+                                rerun("확인사항을 보관했습니다. 기록은 Google Sheets에 안전하게 보존됩니다.")
                             except (ValueError, ReviewBoardConnectionError) as exc:
                                 st.error(str(exc))
 
     st.divider()
-    if st.button("＋ 새 확인사항 작성", key="open_review_item_form", type="primary", width="stretch"):
+    if not has_access("TEAM"):
+        st.caption("새 확인사항과 댓글 작성은 사이드바에서 팀원 권한으로 로그인한 뒤 사용할 수 있습니다.")
+    if st.button(
+        "＋ 새 확인사항 작성",
+        key="open_review_item_form",
+        type="primary",
+        width="stretch",
+        disabled=not has_access("TEAM"),
+    ):
         st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
 
-    if st.session_state.get("show_review_item_form", False):
+    if st.session_state.get("show_review_item_form", False) and has_access("TEAM"):
         with st.form("new_review_item", clear_on_submit=True, border=True):
             st.markdown("**새 확인사항 등록**")
             new_title = st.text_input("제목", placeholder="무엇을 확인해야 하나요?")
@@ -1006,28 +1075,56 @@ def shared_review_board() -> None:
                 except (ValueError, ReviewBoardConnectionError) as exc:
                     st.error(str(exc))
 
-    with st.expander("게시판 데이터 관리"):
-        st.caption("백업에는 게시글·댓글·상태 변경이력이 포함됩니다.")
-        if st.button("최신 게시판 백업 준비", key="prepare_review_board_backup", width="stretch"):
-            try:
-                st.session_state["review_board_backup_payload"] = store.export_json()
-            except ReviewBoardConnectionError as exc:
-                st.error(str(exc))
-        backup_payload = st.session_state.get("review_board_backup_payload")
-        backup_col, sheet_col = st.columns(2)
-        if backup_payload:
-            backup_col.download_button(
-                "게시판 백업 다운로드",
-                backup_payload,
-                file_name=f"joyful_review_board_{date.today().isoformat()}.json",
-                mime="application/json",
+    if has_access("ADMIN"):
+        board_admin = st.expander("게시판 데이터 관리")
+    else:
+        board_admin = None
+    if board_admin is not None:
+        with board_admin:
+            st.caption("백업에는 게시글·댓글·상태 변경이력이 포함됩니다.")
+            if st.button("최신 게시판 백업 준비", key="prepare_review_board_backup", width="stretch"):
+                try:
+                    st.session_state["review_board_backup_payload"] = store.export_json()
+                except ReviewBoardConnectionError as exc:
+                    st.error(str(exc))
+            backup_payload = st.session_state.get("review_board_backup_payload")
+            backup_col, sheet_col = st.columns(2)
+            if backup_payload:
+                backup_col.download_button(
+                    "게시판 백업 다운로드",
+                    backup_payload,
+                    file_name=f"joyful_review_board_{today_kst().isoformat()}.json",
+                    mime="application/json",
+                    width="stretch",
+                )
+            sheet_col.link_button(
+                "Google Sheets에서 보기",
+                f"https://docs.google.com/spreadsheets/d/{REVIEW_BOARD_SPREADSHEET_ID}/edit",
                 width="stretch",
             )
-        sheet_col.link_button(
-            "Google Sheets에서 보기",
-            f"https://docs.google.com/spreadsheets/d/{REVIEW_BOARD_SPREADSHEET_ID}/edit",
-            width="stretch",
-        )
+            archived_items = [
+                item for item in snapshot.get("raw_items", [])
+                if str(item.get("archived_at") or "").strip()
+            ]
+            if archived_items:
+                st.markdown("**보관한 확인사항 복원**")
+                restore_map = {
+                    f"{item.get('title') or '제목 없음'} · {str(item.get('archived_at'))[:10]}": str(item.get("item_id"))
+                    for item in archived_items
+                }
+                restore_label = st.selectbox("복원할 항목", list(restore_map), key="review_restore_item")
+                restore_author = st.text_input(
+                    "복원한 사람",
+                    value=st.session_state.get("operator_name", ""),
+                    key="review_restore_author",
+                )
+                if st.button("선택 항목 복원", key="restore_review_item", width="stretch"):
+                    try:
+                        store.restore_item(restore_map[restore_label], restore_author)
+                        _cached_review_board_snapshot.clear()
+                        rerun("보관한 확인사항을 복원했습니다.")
+                    except (ValueError, ReviewBoardConnectionError) as exc:
+                        st.error(str(exc))
 
 
 def sidebar() -> str:
@@ -1078,7 +1175,18 @@ def sidebar() -> str:
             st.session_state.pop("_secondary_nav", None)
         st.session_state["_last_main_nav"] = nav
         with st.expander("매뉴얼·관리", expanded=st.session_state.get("_secondary_nav") is not None):
+            if st.session_state.get("_secondary_nav") and st.button(
+                f"← {menu_labels[nav]}로 돌아가기",
+                key="sidebar_return_primary",
+                width="stretch",
+            ):
+                st.session_state.pop("_secondary_nav", None)
+                st.rerun()
             for page in secondary_menu_items:
+                if page == "결정·운영로그" and not has_access("TEAM"):
+                    continue
+                if page in {"보관함", "데이터·백업"} and not has_access("ADMIN"):
+                    continue
                 marker = "• " if st.session_state.get("_secondary_nav") == page else ""
                 if st.button(
                     marker + menu_labels[page],
@@ -1089,18 +1197,21 @@ def sidebar() -> str:
         st.markdown("---")
         if st.session_state.pop("_clear_quick_search", False):
             st.session_state["quick_search"] = ""
-        quick = st.text_input("빠른 검색", placeholder="세례, 성찬, 마이크…", key="quick_search")
-        if quick:
-            st.session_state["search_term"] = quick
-            st.session_state.pop("_secondary_nav", None)
-            nav = "전체 검색"
-        with st.expander("내 이름 설정"):
-            st.text_input(
-                "게시판 작성자 이름",
-                placeholder="예: 홍길동",
-                key="operator_name",
-                help="이 브라우저를 사용하는 동안 게시글과 댓글 작성자에 자동 입력됩니다.",
-            )
+        with st.form("sidebar_quick_search_form"):
+            quick = st.text_input("빠른 검색", placeholder="세례, 성찬, 마이크…", key="quick_search")
+            quick_submitted = st.form_submit_button("검색", width="stretch")
+        if quick_submitted and quick.strip():
+            st.session_state["search_term"] = quick.strip()
+            navigate("전체 검색")
+        access_control()
+        if has_access("TEAM"):
+            with st.expander("내 이름 설정"):
+                st.text_input(
+                    "게시판 작성자 이름",
+                    placeholder="예: 홍길동",
+                    key="operator_name",
+                    help="이 브라우저를 사용하는 동안 게시글과 댓글 작성자에 자동 입력됩니다.",
+                )
         st.caption("원본 Sheets 읽기 전용 · 게시판 영구 저장")
         st.caption(f"버전 {APP_VERSION}")
         return str(st.session_state.get("_secondary_nav") or nav)
@@ -1117,7 +1228,8 @@ def review_board_summary() -> None:
     st.subheader("팀 확인")
     if store is None:
         st.info("팀 게시판 영구 저장소가 아직 연결되지 않았습니다.")
-        st.caption(connection_error)
+        if has_access("ADMIN"):
+            st.caption(connection_error)
         return
     try:
         snapshot = _cached_review_board_snapshot(REVIEW_BOARD_SPREADSHEET_ID, store, True, 500)
@@ -1128,7 +1240,7 @@ def review_board_summary() -> None:
 
     items = snapshot["items"]
     counts = snapshot["counts"]
-    today_text = date.today().isoformat()
+    today_text = today_kst().isoformat()
     overdue = sum(
         1 for item in items
         if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < today_text
@@ -1178,7 +1290,7 @@ def review_board_summary() -> None:
 
 def dashboard_page() -> None:
     dashboard_header()
-    today_date = date.today()
+    today_date = today_kst()
     today = today_date.isoformat()
     week_end = (today_date + timedelta(days=7)).isoformat()
     upcoming = rows(
@@ -1211,10 +1323,11 @@ def dashboard_page() -> None:
     needs_review = (row("SELECT COUNT(*) AS count FROM unresolved_imports WHERE status='OPEN' AND quality='Needs Review'") or {}).get("count", 0)
     sunday_date = next_weekday(today_date, 6)
     friday_date = next_weekday(today_date, 4)
+    active_calendar_id = get_app_meta("last_google_calendar_id", "")
     calendar_items = rows(
         "SELECT * FROM church_calendar_events WHERE archived_at IS NULL AND status<>'CANCELLED' AND start_date>=? "
-        "ORDER BY start_date,id LIMIT 6",
-        (today,),
+        "AND (?='' OR calendar_id=?) ORDER BY start_date,id LIMIT 6",
+        (today, active_calendar_id, active_calendar_id),
     )
 
     st.subheader("다음 정기예배")
@@ -1252,6 +1365,25 @@ def dashboard_page() -> None:
         if st.button(attendance_label, key="dashboard_attendance_open", width="stretch"):
             navigate("예배 인원 현황")
 
+    lineup_rows = rows(
+        "SELECT services.service_date,services.service_type,assignments.role,members.name "
+        "FROM assignments JOIN services ON services.id=assignments.service_id "
+        "JOIN members ON members.id=assignments.member_id "
+        "WHERE services.service_date IN (?,?) ORDER BY services.service_date,assignments.role,members.name",
+        (friday_date.isoformat(), sunday_date.isoformat()),
+    )
+    if lineup_rows:
+        with st.expander(f"이번 주 예배 담당 · {len(lineup_rows)}명", expanded=False):
+            current_service = None
+            for assignment in lineup_rows:
+                service_label = f"{assignment['service_date']} · {assignment['service_type']}"
+                if service_label != current_service:
+                    st.markdown(f"**{service_label}**")
+                    current_service = service_label
+                st.markdown(f"- {html.escape(str(assignment['role']))} · {html.escape(str(assignment['name']))}")
+    else:
+        st.caption("이번 주 엔지니어 라인업 자료가 아직 없습니다.")
+
     st.markdown("#### 자주 쓰는 메뉴")
     quick_manual_rows = rows(
         "SELECT id,source_sheet FROM manuals WHERE status='CURRENT' AND archived_at IS NULL "
@@ -1262,7 +1394,7 @@ def dashboard_page() -> None:
         ("주일 준비", "주일 세팅 타임테이블", "매뉴얼"),
         ("금요 준비", "금요집회 세팅 타임테이블", "매뉴얼"),
         ("상시 비품", "항시 체크 비품", "매뉴얼"),
-        ("예배 인원", None, "예배 인원 현황"),
+        ("팀 확인", None, "팀 확인"),
     ]
     with st.container(key="dashboard_quick_menu"):
         quick_cols = st.columns(4)
@@ -1334,9 +1466,10 @@ def dashboard_page() -> None:
             if button_col.button("데이터 확인", width="stretch"):
                 navigate("데이터·백업")
 
-    with st.expander("관리자 · 원본 데이터 업데이트", expanded=False):
-        st.caption("Google Sheets 원본을 갱신할 때만 사용합니다. 일반 사용자는 누르지 않아도 됩니다.")
-        google_sheets_sync_bar()
+    if has_access("ADMIN"):
+        with st.expander("관리자 · 원본 데이터 업데이트", expanded=False):
+            st.caption("Google Sheets 원본을 갱신할 때만 사용합니다. 일반 사용자는 누르지 않아도 됩니다.")
+            google_sheets_sync_bar()
 
 
 def event_detail(event_id: int) -> None:
@@ -1379,12 +1512,12 @@ def event_detail(event_id: int) -> None:
             with st.expander("이 행사를 기준으로 다음 행사 만들기"):
                 with st.form(f"clone_{event_id}"):
                     new_title = st.text_input("새 행사명", value=event["title"])
-                    new_date = st.date_input("새 행사 날짜", value=date.today())
+                    new_date = st.date_input("새 행사 날짜", value=today_kst())
                     if st.form_submit_button("이전 행사 기준으로 생성", width="stretch"):
                         new_id = clone_event(event_id, new_title, new_date)
                         st.session_state["selected_event"] = new_id
                         rerun("체크리스트 구조를 복제해 새 행사를 만들었습니다.")
-            if st.button("행사 보관", type="secondary", key=f"archive_event_{event_id}", width="stretch"):
+            if has_access("ADMIN") and st.button("행사 보관", type="secondary", key=f"archive_event_{event_id}", width="stretch"):
                 archive_entity("events", event_id)
                 st.session_state.pop("selected_event", None)
                 rerun("행사를 보관함으로 이동했습니다.")
@@ -1426,7 +1559,7 @@ def event_detail(event_id: int) -> None:
                 description = st.text_area("설명")
                 owner = st.text_input("담당자")
                 priority = st.selectbox("중요도", ["HIGH", "MEDIUM", "LOW"], index=1, format_func=priority_ko)
-                due = st.date_input("기한", value=event["event_date"] and date.fromisoformat(event["event_date"]) or date.today())
+                due = st.date_input("기한", value=event["event_date"] and date.fromisoformat(event["event_date"]) or today_kst())
                 dependencies = {"없음": None, **{item["title"]: item["id"] for item in task_rows}}
                 dependency_label = st.selectbox("선행 업무", list(dependencies))
                 if st.form_submit_button("업무 추가"):
@@ -1520,28 +1653,81 @@ def event_detail(event_id: int) -> None:
                 rerun("회고를 저장했습니다. 다음 동일 행사에서 자동으로 표시됩니다.")
 
 
+def event_readonly_detail(event_id: int) -> None:
+    event = row("SELECT * FROM events WHERE id=?", (event_id,))
+    if not event:
+        st.error("행사를 찾을 수 없습니다.")
+        return
+    ready = readiness(event_id)
+    st.markdown(f"## {event['title']}")
+    st.markdown(
+        f"{badge(status_ko(event['status']))} {badge(dday(event['event_date']), 'gray')} "
+        f"{badge(quality_ko(event['data_quality']))}",
+        unsafe_allow_html=True,
+    )
+    compact_stats([
+        ("준비도", f"{ready['percent']}%"),
+        ("완료", f"{ready['done']}건"),
+        ("미완료", f"{ready['open']}건"),
+        ("중요 미완료", f"{ready['high_open']}건"),
+    ])
+    st.caption(
+        " · ".join(filter(None, [event["event_date"] or "날짜 미정", event["category"] or "기타", f"담당 {event['owner']}" if event["owner"] else "담당 미정"]))
+    )
+    if event["description"]:
+        st.write(event["description"])
+    task_rows = rows(
+        "SELECT * FROM tasks WHERE event_id=? AND archived_at IS NULL "
+        "ORDER BY CASE status WHEN 'DONE' THEN 1 ELSE 0 END, due_date,id",
+        (event_id,),
+    )
+    st.markdown("### 체크리스트")
+    if not task_rows:
+        st.info("등록된 체크리스트가 없습니다.")
+    for task in task_rows:
+        status_mark = "✓" if task["status"] == "DONE" else "○"
+        st.markdown(f"{status_mark} **{task['title']}** · {task['due_date'] or task['source_timing'] or '기한 미정'}")
+        if task["description"]:
+            st.caption(task["description"][:240])
+    st.caption("수정과 상태 변경은 사이드바에서 팀원 권한으로 로그인하면 사용할 수 있습니다.")
+
+
 def events_page() -> None:
     hero("행사", "반복되는 특별예배의 준비·기록·회고를 연결합니다.")
+    if has_access("TEAM"):
+        st.caption("저장 안내 · 행사와 체크리스트 변경은 현재 로컬 DB에 저장됩니다. 영구 DB 이전 전에는 중요한 내용을 별도 보관하세요.")
     list_tab, create_tab, templates_tab = st.tabs(["행사 목록", "새 행사", "체크리스트 템플릿"])
     with list_tab:
+        event_today = today_kst().isoformat()
         active = rows(
             "SELECT * FROM events WHERE archived_at IS NULL ORDER BY "
             "CASE status WHEN 'ACTIVE' THEN 0 WHEN 'PLANNING' THEN 1 WHEN 'COMPLETED' THEN 2 ELSE 3 END, "
-            "CASE WHEN event_date>=date('now','localtime') THEN 0 ELSE 1 END, "
-            "CASE WHEN event_date>=date('now','localtime') THEN event_date END ASC, event_date DESC, id DESC"
+            "CASE WHEN event_date>=? THEN 0 ELSE 1 END, "
+            "CASE WHEN event_date>=? THEN event_date END ASC, event_date DESC, id DESC",
+            (event_today, event_today),
         )
         if not active:
             st.info("등록된 행사가 없습니다.")
         else:
             status_col, category_col = st.columns(2)
-            event_status_options = {"전체 상태": "ALL", "준비중": "PLANNING", "진행중": "ACTIVE", "종료": "COMPLETED"}
+            event_status_options = {
+                "진행 예정": "OPEN",
+                "준비중": "PLANNING",
+                "진행중": "ACTIVE",
+                "종료": "COMPLETED",
+                "취소": "CANCELLED",
+                "전체 상태": "ALL",
+            }
             selected_status_label = status_col.selectbox("상태", list(event_status_options), key="event_status_filter")
             event_categories = ["전체", *sorted({str(item["category"] or "기타") for item in active})]
             selected_event_category = category_col.selectbox("분류", event_categories, key="event_category_filter")
             event_search = st.text_input("행사 검색", placeholder="행사명이나 담당자", key="event_search").strip().casefold()
             filtered_active = []
             for item in active:
-                if event_status_options[selected_status_label] != "ALL" and item["status"] != event_status_options[selected_status_label]:
+                selected_status = event_status_options[selected_status_label]
+                if selected_status == "OPEN" and item["status"] not in {"PLANNING", "ACTIVE"}:
+                    continue
+                if selected_status not in {"ALL", "OPEN"} and item["status"] != selected_status:
                     continue
                 if selected_event_category != "전체" and str(item["category"] or "기타") != selected_event_category:
                     continue
@@ -1557,18 +1743,26 @@ def events_page() -> None:
                 selected_index = event_ids.index(requested_event) if requested_event in event_ids else 0
                 selected_label = st.selectbox("행사 선택", list(options), index=selected_index, key="selected_event_selector")
                 st.session_state["selected_event"] = options[selected_label]
-                event_detail(options[selected_label])
+                if has_access("TEAM"):
+                    event_detail(options[selected_label])
+                else:
+                    event_readonly_detail(options[selected_label])
     with create_tab:
+        if not has_access("TEAM"):
+            st.info("새 행사는 팀원 권한으로 로그인하면 등록할 수 있습니다.")
         templates = rows("SELECT * FROM event_templates WHERE status='CURRENT' ORDER BY category,title")
         template_map = {"템플릿 없음": None, **{f"{item['title']} ({item['category']})": item["id"] for item in templates}}
         with st.form("create_event"):
             title = st.text_input("행사명", placeholder="예: 2027 기도의 승부")
-            event_date = st.date_input("행사 날짜", value=date.today())
+            event_date = st.date_input("행사 날짜", value=today_kst())
             category = st.selectbox("카테고리", ["특별예배", "특별순서", "정기예배", "행사", "기타"])
             template_label = st.selectbox("체크리스트 템플릿", list(template_map))
             owner = st.text_input("담당자")
             description = st.text_area("메모")
-            if st.form_submit_button("행사 생성", type="primary"):
+            if st.form_submit_button("행사 생성", type="primary", disabled=not has_access("TEAM")):
+                if not has_access("TEAM"):
+                    st.error("팀원 권한이 필요합니다.")
+                    return
                 if not title.strip():
                     st.error("행사명을 입력하세요.")
                 else:
@@ -1609,7 +1803,10 @@ def events_page() -> None:
                 category = st.text_input("카테고리", value="특별예배")
                 description = st.text_area("설명")
                 manual_label = st.selectbox("관련 매뉴얼", list(manual_map))
-                if st.form_submit_button("템플릿 생성"):
+                if st.form_submit_button("템플릿 생성", disabled=not has_access("TEAM")):
+                    if not has_access("TEAM"):
+                        st.error("팀원 권한이 필요합니다.")
+                        return
                     if title:
                         create_event_template(title, category, description, manual_map[manual_label])
                         rerun("체크리스트 템플릿을 생성했습니다.")
@@ -1624,15 +1821,40 @@ def events_page() -> None:
                     due_offset = st.number_input("행사일 기준 일수", value=-7, step=1)
                     priority = st.selectbox("중요도", ["HIGH", "MEDIUM", "LOW"], index=1, format_func=priority_ko)
                     owner = st.text_input("기본 담당자")
-                    if st.form_submit_button("템플릿 업무 추가"):
+                    if st.form_submit_button("템플릿 업무 추가", disabled=not has_access("TEAM")):
+                        if not has_access("TEAM"):
+                            st.error("팀원 권한이 필요합니다.")
+                            return
                         if task_title:
                             add_task_template(template_map[template_label], task_title, task_description, source_timing, int(due_offset), priority, owner)
                             rerun("템플릿 업무를 추가했습니다.")
 
 
+def manual_create_form() -> None:
+    with st.form("new_manual"):
+        title = st.text_input("제목")
+        category = st.text_input("카테고리", value="운영기준")
+        standard = st.text_area("현재 기준 요약")
+        what = st.text_area("목적")
+        how = st.text_area("준비·운영 방법")
+        why = st.text_area("이유")
+        caution = st.text_area("주의사항")
+        if st.form_submit_button("매뉴얼 생성", type="primary"):
+            if title:
+                create_manual(title, category, what, how, why, caution, standard)
+                rerun("v1 매뉴얼을 생성했습니다.")
+            else:
+                st.error("제목을 입력하세요.")
+
+
 def manuals_page() -> None:
     hero("매뉴얼", "분류와 검색으로 필요한 준비 내용을 빠르게 찾습니다.")
+    if has_access("TEAM"):
+        st.caption("저장 안내 · 새 매뉴얼과 개정 내용은 현재 로컬 DB에 저장됩니다. 영구 DB 이전 전에는 중요한 내용을 별도 보관하세요.")
     current, create_tab = st.tabs(["현재 매뉴얼", "새 매뉴얼"])
+    with create_tab:
+        if access_required("TEAM", "새 매뉴얼 작성"):
+            manual_create_form()
     with current:
         manuals = rows(
             "SELECT * FROM manuals WHERE status='CURRENT' AND archived_at IS NULL ORDER BY "
@@ -1648,6 +1870,7 @@ def manuals_page() -> None:
         if reset_col.button("↺ 처음으로", width="stretch", help="분류·검색·선택을 초기화합니다."):
             st.session_state["manual_category_filter"] = "전체"
             st.session_state["manual_search"] = ""
+            st.session_state["_manual_home"] = True
             st.session_state.pop("selected_manual", None)
             st.session_state.pop("selected_manual_selector", None)
             st.rerun()
@@ -1675,6 +1898,19 @@ def manuals_page() -> None:
             requested = next((item for item in manuals if item["id"] == requested_manual), None)
             if requested:
                 filtered_manuals = [requested, *filtered_manuals]
+        show_manual_home = st.session_state.get("_manual_home", requested_manual is None)
+        if show_manual_home and not requested_manual and not manual_search and selected_category == "전체":
+            st.caption("자주 찾는 매뉴얼을 바로 열거나, 위 검색과 분류를 사용하세요.")
+            for item in filtered_manuals[:6]:
+                if st.button(
+                    f"{item['title']} · {item['category'] or '기타'}",
+                    key=f"manual_home_{item['id']}",
+                    width="stretch",
+                ):
+                    st.session_state["selected_manual"] = item["id"]
+                    st.session_state["_manual_home"] = False
+                    st.rerun()
+            return
         if not filtered_manuals:
             st.info("조건에 맞는 매뉴얼이 없습니다. 분류를 '전체'로 바꾸거나 검색어를 줄여보세요.")
             return
@@ -1686,11 +1922,12 @@ def manuals_page() -> None:
         st.caption(f"검색 결과 {len(filtered_manuals)}개")
         manual_id = manual_map[selected]
         st.session_state["selected_manual"] = manual_id
+        st.session_state["_manual_home"] = False
         manual = row("SELECT * FROM manuals WHERE id=?", (manual_id,))
         revision = row("SELECT * FROM manual_revisions WHERE manual_id=? AND status='CURRENT' ORDER BY version DESC LIMIT 1", (manual_id,))
         age = None
         if manual["last_verified"]:
-            age = (date.today() - date.fromisoformat(manual["last_verified"][:10])).days
+            age = (today_kst() - date.fromisoformat(manual["last_verified"][:10])).days
         st.markdown(f"## {manual['title']}")
         version_label = f"v{manual['version']}"
         st.markdown(f"{badge('현재 기준')} {badge(version_label)} {badge(quality_ko(manual['data_quality']), 'warn' if manual['data_quality']=='Needs Review' else '')}", unsafe_allow_html=True)
@@ -1700,7 +1937,7 @@ def manuals_page() -> None:
             st.warning(f"마지막 검토: {age}일 전 · 검토 필요")
         else:
             st.caption(f"마지막 검토: {age}일 전 ({manual['last_verified']})")
-        if st.button("현재도 유효함", key=f"verify_{manual_id}"):
+        if has_access("TEAM") and st.button("현재도 유효함", key=f"verify_{manual_id}"):
             verify_manual(manual_id)
             rerun("내용 변경 없이 검증일을 갱신했습니다.")
         st.markdown("### 한눈에 보기")
@@ -1800,42 +2037,31 @@ def manuals_page() -> None:
         with st.expander(f"버전 기록 ({len(revisions)}개)"):
             for item in revisions:
                 st.markdown(f"**v{item['version']} · {status_ko(item['status'])} · {item['created_at'][:10]}**  \n{item['change_summary'] or '변경 설명 없음'}")
-        with st.expander("새 버전 만들기"):
-            with st.form(f"revision_{manual_id}"):
-                standard = st.text_area("현재 기준 요약", value=manual["current_standard"] or "")
-                what = st.text_area("목적", value=revision["what_text"] if revision else "")
-                how = st.text_area("준비·운영 방법", value=revision["how_text"] if revision else "", height=180)
-                why = st.text_area("이유", value=revision["why_text"] if revision else "")
-                caution = st.text_area("주의사항", value=revision["caution"] if revision else "")
-                summary = st.text_input("변경 요약")
-                if st.form_submit_button("새 버전으로 저장", type="primary"):
-                    if not summary:
-                        st.error("변경 요약을 입력하세요.")
-                    else:
-                        revise_manual(manual_id, what, how, why, caution, standard, summary)
-                        rerun("이전 버전을 보존하고 새 버전을 현재 기준으로 설정했습니다.")
-        if st.button("매뉴얼 보관", key=f"archive_manual_{manual_id}"):
+        if has_access("TEAM"):
+            with st.expander("새 버전 만들기"):
+                with st.form(f"revision_{manual_id}"):
+                    standard = st.text_area("현재 기준 요약", value=manual["current_standard"] or "")
+                    what = st.text_area("목적", value=revision["what_text"] if revision else "")
+                    how = st.text_area("준비·운영 방법", value=revision["how_text"] if revision else "", height=180)
+                    why = st.text_area("이유", value=revision["why_text"] if revision else "")
+                    caution = st.text_area("주의사항", value=revision["caution"] if revision else "")
+                    summary = st.text_input("변경 요약")
+                    if st.form_submit_button("새 버전으로 저장", type="primary"):
+                        if not summary:
+                            st.error("변경 요약을 입력하세요.")
+                        else:
+                            revise_manual(manual_id, what, how, why, caution, standard, summary)
+                            rerun("이전 버전을 보존하고 새 버전을 현재 기준으로 설정했습니다.")
+        if has_access("ADMIN") and st.button("매뉴얼 보관", key=f"archive_manual_{manual_id}"):
             archive_entity("manuals", manual_id)
             rerun("매뉴얼을 보관함으로 이동했습니다.")
-    with create_tab:
-        with st.form("new_manual"):
-            title = st.text_input("제목")
-            category = st.text_input("카테고리", value="운영기준")
-            standard = st.text_area("현재 기준 요약")
-            what = st.text_area("목적")
-            how = st.text_area("준비·운영 방법")
-            why = st.text_area("이유")
-            caution = st.text_area("주의사항")
-            if st.form_submit_button("매뉴얼 생성", type="primary"):
-                if title:
-                    create_manual(title, category, what, how, why, caution, standard)
-                    rerun("v1 매뉴얼을 생성했습니다.")
-                else:
-                    st.error("제목을 입력하세요.")
 
 
 def logs_page() -> None:
     hero("결정·운영 로그", "무엇을 바꿨는지보다 왜 바꿨는지를 남깁니다.")
+    if not access_required("TEAM", "결정·운영 기록"):
+        return
+    st.caption("저장 안내 · 이 기록은 현재 로컬 DB에 저장됩니다. 영구 DB 이전 전에는 중요한 내용을 별도 보관하세요.")
     decision_tab, operation_tab = st.tabs(["결정 기록", "운영 기록"])
     events = rows("SELECT id,title,event_date FROM events WHERE archived_at IS NULL ORDER BY event_date DESC")
     manuals = rows("SELECT id,title FROM manuals WHERE status='CURRENT' ORDER BY title")
@@ -1866,7 +2092,7 @@ def logs_page() -> None:
                             "previous_method": previous,
                             "new_method": new,
                             "reason": reason,
-                            "decided_at": date.today().isoformat(),
+                            "decided_at": today_kst().isoformat(),
                             "decided_by": decided_by,
                             "evidence": evidence,
                             "status": status,
@@ -1899,7 +2125,7 @@ def logs_page() -> None:
                 action = st.text_area("조치")
                 result = st.text_area("결과")
                 recheck = st.checkbox("재확인 필요")
-                occurred = st.date_input("발생일", value=date.today())
+                occurred = st.date_input("발생일", value=today_kst())
                 if st.form_submit_button("로그 저장", type="primary"):
                     if title:
                         add_operation_log({
@@ -1955,6 +2181,7 @@ def attendance_page() -> None:
     missing_dates = snapshot["missing_dates"]
     recorded_pending_dates = snapshot["recorded_pending_dates"]
     absent_dates = snapshot["absent_dates"]
+    online_metric_defined = False
 
     latest_count_date = sunday_data.iloc[0]["service_date"].strftime("%Y.%m.%d") if not sunday_data.empty else "없음"
     last_sync = get_app_meta("last_google_sheets_sync_at", "")
@@ -2006,6 +2233,9 @@ def attendance_page() -> None:
         st.caption("온라인 수치는 고유 참석자가 아닌 시청 지표일 수 있어 현장 인원과 분리해서 봅니다.")
         latest_metric_value = latest_sunday.get("metric_type", "")
         latest_metric_type = str(latest_metric_value if pd.notna(latest_metric_value) else "").strip().upper()
+        online_metric_defined = bool(latest_metric_type) and latest_metric_type not in {
+            "ONSITE_PLUS_ONLINE_UNDEFINED", "LEGACY_COMBINED_COUNTS"
+        }
         if latest_metric_type in {"ONSITE_PLUS_ONLINE_UNDEFINED", "LEGACY_COMBINED_COUNTS"}:
             st.caption("⚠ 온라인 지표의 집계 기준이 아직 정의되지 않았습니다. 합산은 참고치로만 확인하세요.")
 
@@ -2033,18 +2263,23 @@ def attendance_page() -> None:
         if len(previous_four) == 4 and recent_offline_average is not None and previous_four["offline_count"].notna().any()
         else None
     )
+    fourth_stat = (
+        ("최근 4회 온라인 지표 평균", f"{recent_online_average:.1f}" if recent_online_average is not None else "자료 없음")
+        if online_metric_defined
+        else ("미확인 주일", f"{len(missing_dates)}회")
+    )
     stats = [
         (comparison_label, f"{week_delta:+d}명" if week_delta is not None else "비교 없음"),
         ("최근 4회 현장 평균", f"{recent_offline_average:.1f}명" if recent_offline_average is not None else "자료 없음"),
         ("직전 4회 현장 평균 대비", f"{four_week_delta:+.1f}명" if four_week_delta is not None else "비교 없음"),
-        ("최근 4회 온라인 지표 평균", f"{recent_online_average:.1f}" if recent_online_average is not None else "자료 없음"),
+        fourth_stat,
     ]
     compact_stats(stats, columns=4)
     recent_period = recent_four.sort_values("service_date")
     st.caption(
         f"최근 4개 집계 완료 회차 · {recent_period.iloc[0]['service_date'].strftime('%Y.%m.%d')}"
         f" ~ {recent_period.iloc[-1]['service_date'].strftime('%Y.%m.%d')} · "
-        "누락 주일은 평균에서 제외 · 송출 없음은 온라인 평균에서 제외"
+        "누락 주일은 평균에서 제외 · 온라인 집계 기준 확정 전에는 평균을 핵심 지표로 사용하지 않음"
     )
 
     st.subheader("주일예배 회차별 추이")
@@ -2367,9 +2602,15 @@ def search_page() -> None:
             )
             excerpt = search_excerpt(item["snippet"], term)
             content_col.caption(excerpt or "설명 없음")
-            open_label = "매뉴얼 열기" if item["target_page"] == "매뉴얼" else ("행사 열기" if item["target_page"] == "행사" else "기록 열기")
+            open_label = "보관함 열기" if item["archived"] else (
+                "매뉴얼 열기" if item["target_page"] == "매뉴얼" else (
+                    "행사 열기" if item["target_page"] == "행사" else f"{item['target_page']} 열기"
+                )
+            )
             if action_col.button(open_label, key=f"search_open_{index}_{item['kind']}_{item['id']}", width="stretch"):
-                if item["target_page"] == "매뉴얼":
+                if item["archived"] and item["target_page"] in {"매뉴얼", "행사"}:
+                    navigate("보관함")
+                elif item["target_page"] == "매뉴얼":
                     navigate("매뉴얼", "selected_manual", item["target_id"])
                 elif item["target_page"] == "행사":
                     navigate("행사", "selected_event", item["target_id"])
@@ -2379,6 +2620,8 @@ def search_page() -> None:
 
 def archive_page() -> None:
     hero("보관함", "삭제 대신 보관하고, 필요할 때 다시 현재 자료로 복원합니다.")
+    if not access_required("ADMIN", "보관 자료 복원"):
+        return
     events = rows("SELECT id,title,event_date,archived_at FROM events WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
     manuals = rows("SELECT id,title,archived_at FROM manuals WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
     event_tab, manual_tab = st.tabs([f"행사 ({len(events)})", f"매뉴얼 ({len(manuals)})"])
@@ -2404,16 +2647,19 @@ def archive_page() -> None:
 
 def calendar_page() -> None:
     hero("교회력", "Google Calendar의 교회 일정을 읽기 전용으로 동기화해 대시보드에 표시합니다.")
-    today = date.today().isoformat()
+    today = today_kst().isoformat()
+    active_calendar_id = get_app_meta("last_google_calendar_id", "") or get_app_meta("google_calendar_id", "")
     upcoming = rows(
         "SELECT * FROM church_calendar_events WHERE archived_at IS NULL AND status<>'CANCELLED' AND start_date>=? "
-        "ORDER BY start_date,id LIMIT 30",
-        (today,),
+        "AND (?='' OR calendar_id=?) ORDER BY start_date,id LIMIT 30",
+        (today, active_calendar_id, active_calendar_id),
     )
     sync_status = row(
-        "SELECT MAX(synced_at) AS last_sync,COUNT(*) AS total FROM church_calendar_events WHERE archived_at IS NULL"
-    ) or {"last_sync": None, "total": 0}
-    last_sync_label = (sync_status["last_sync"] or "연동 전").replace("T", " ")
+        "SELECT COUNT(*) AS total FROM church_calendar_events WHERE archived_at IS NULL AND (?='' OR calendar_id=?)",
+        (active_calendar_id, active_calendar_id),
+    ) or {"total": 0}
+    last_calendar_sync = get_app_meta("last_google_calendar_sync_at", "")
+    last_sync_label = (last_calendar_sync or "연동 전").replace("T", " ")
     if last_sync_label != "연동 전" and len(last_sync_label) >= 16:
         last_sync_label = last_sync_label[5:16]
     compact_stats([
@@ -2441,6 +2687,10 @@ def calendar_page() -> None:
                     st.link_button("Google Calendar에서 보기", item["html_link"], width="stretch")
     else:
         st.info("아직 동기화된 교회력 일정이 없습니다.")
+
+    if not has_access("ADMIN"):
+        st.caption("Google Calendar 연결과 동기화는 관리자 권한에서만 표시됩니다.")
+        return
 
     with st.expander("Google Calendar 연결 설정", expanded=False):
         calendar_credentials, calendar_secret_error = service_account_secret("GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT")
@@ -2491,6 +2741,8 @@ def calendar_page() -> None:
 
 def data_page() -> None:
     hero("데이터·백업", "원본 가져오기부터 형식 확인·정리·저장 상태까지 확인합니다.")
+    if not access_required("ADMIN", "원본 동기화·데이터 내보내기·DB 관리"):
+        return
     st.subheader("Google Sheets 원본")
     google_sheets_sync_bar()
     st.caption("예배팀 매뉴얼과 예배인원·엔지니어 라인업은 읽기 전용으로 가져옵니다.")
@@ -2499,32 +2751,42 @@ def data_page() -> None:
         "현재 Streamlit 로컬 DB에 저장되어 재부팅·재배포 후 유지가 보장되지 않습니다. 중요한 내용은 백업을 내려받으세요."
     )
     st.divider()
-    import_tab, quality_tab, backup_tab = st.tabs(["가져오기 결과", "확인 필요", "백업"])
+    import_tab, quality_tab, backup_tab = st.tabs(["가져오기 결과", "확인 필요", "데이터 내보내기"])
     with import_tab:
         if IMPORT_REPORT_PATH.exists():
-            report = json.loads(IMPORT_REPORT_PATH.read_text(encoding="utf-8"))
-            counts = report.get("imported", {})
-            compact_stats([
-                ("예배 인원", counts.get("attendance", 0)),
-                ("매뉴얼", counts.get("manuals", 0)),
-                ("행사", counts.get("events", 0)),
-                ("인원 명단", counts.get("members", 0)),
-            ], columns=4)
-            st.json(report, expanded=False)
+            try:
+                report = json.loads(IMPORT_REPORT_PATH.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                st.error("가져오기 결과 파일을 읽지 못했습니다. 원본 데이터는 그대로 유지됩니다.")
+                st.caption(str(exc))
+            else:
+                counts = report.get("imported", {})
+                compact_stats([
+                    ("예배 인원", counts.get("attendance", 0)),
+                    ("매뉴얼", counts.get("manuals", 0)),
+                    ("행사", counts.get("events", 0)),
+                    ("인원 명단", counts.get("members", 0)),
+                ], columns=4)
+                st.json(report, expanded=False)
         else:
             st.info("가져오기 결과가 없습니다.")
         with st.expander("고급 관리 · 로컬 DB 다시 구축"):
+            cached_sources = list(GOOGLE_SHEETS_CACHE_DIR.glob("*.xlsx"))
+            local_sources = list(SOURCE_DIR.glob("*.xlsx"))
+            rebuild_source = GOOGLE_SHEETS_CACHE_DIR if cached_sources else SOURCE_DIR
+            rebuild_files = cached_sources or local_sources
             st.error(
                 "이 기능은 행사·업무 상태·매뉴얼 수정·운영기록 등 로컬 DB의 사용자 입력을 삭제합니다. "
-                "먼저 '백업' 탭에서 파일을 내려받으세요. 게시판 Google Sheets는 삭제되지 않습니다."
+                "먼저 '데이터 내보내기' 탭에서 파일을 내려받으세요. 게시판 Google Sheets는 삭제되지 않습니다."
             )
+            if not rebuild_files:
+                st.warning("재구축할 Excel 원본이 없습니다. 먼저 위에서 최신 자료 업데이트를 완료하세요.")
             confirm_reset = st.text_input("실행하려면 '데이터 다시 구축'을 입력", key="db_reset_confirmation")
-            backup_confirmed = st.checkbox("백업 파일을 내려받았습니다.", key="db_reset_backup_confirmed")
-            reset_ready = confirm_reset.strip() == "데이터 다시 구축" and backup_confirmed
+            backup_confirmed = st.checkbox("데이터 내보내기 파일을 내려받았습니다.", key="db_reset_backup_confirmed")
+            reset_ready = confirm_reset.strip() == "데이터 다시 구축" and backup_confirmed and bool(rebuild_files)
             if st.button("로컬 DB 다시 구축", type="secondary", disabled=not reset_ready, key="rebuild_local_db"):
-                rebuild_source = GOOGLE_SHEETS_CACHE_DIR if list(GOOGLE_SHEETS_CACHE_DIR.glob("*.xlsx")) else SOURCE_DIR
                 migrate(source_dir=rebuild_source, reset=True)
-                rerun("원본 파일로 로컬 DB를 다시 구축했습니다.")
+                rerun("검증된 원본으로 로컬 DB를 안전하게 다시 구축하고 이전 DB를 자동 백업했습니다.")
     with quality_tab:
         unresolved = rows(
             "SELECT unresolved_imports.*,source_files.file_name FROM unresolved_imports LEFT JOIN source_files ON source_files.id=unresolved_imports.source_file_id ORDER BY CASE quality WHEN 'Needs Review' THEN 1 ELSE 2 END,id"
@@ -2552,10 +2814,12 @@ def data_page() -> None:
                 height=360,
             )
     with backup_tab:
-        st.markdown("중요한 운영지식은 JSON 전체 백업과 테이블별 CSV로 내보낼 수 있습니다.")
-        if st.button("백업 생성", type="primary"):
+        st.markdown("중요한 운영지식은 JSON과 테이블별 CSV로 내보낼 수 있습니다. 이 파일은 아직 자동 복원용 백업은 아닙니다.")
+        if st.button("내보내기 파일 생성", type="primary"):
             json_path, csv_payloads = export_backup()
+            sqlite_path = create_sqlite_backup()
             st.session_state["backup_json_path"] = str(json_path)
+            st.session_state["backup_sqlite_path"] = str(sqlite_path)
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
                 for table, content in csv_payloads.items():
@@ -2567,6 +2831,15 @@ def data_page() -> None:
             st.download_button("JSON 전체 백업 다운로드", path.read_bytes(), file_name=path.name, mime="application/json")
         if st.session_state.get("backup_csv_zip"):
             st.download_button("CSV 묶음 다운로드", st.session_state["backup_csv_zip"], file_name="joyful_worship_ops_csv.zip", mime="application/zip")
+        sqlite_path_value = st.session_state.get("backup_sqlite_path")
+        if sqlite_path_value and Path(sqlite_path_value).exists():
+            sqlite_path = Path(sqlite_path_value)
+            st.download_button(
+                "SQLite 복구용 백업 다운로드",
+                sqlite_path.read_bytes(),
+                file_name=sqlite_path.name,
+                mime="application/vnd.sqlite3",
+            )
 
 
 def main() -> None:

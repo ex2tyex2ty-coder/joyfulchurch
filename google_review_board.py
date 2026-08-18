@@ -534,3 +534,66 @@ class GoogleReviewBoardStore:
                 # The archived_at value is authoritative; audit failure must not
                 # invite a second destructive-looking request.
                 pass
+
+    def restore_item(self, review_item_id: str, author: str) -> None:
+        """Restore a soft-archived board item without changing its comments."""
+        review_item_id = str(review_item_id).strip()
+        author = author.strip()
+        if not review_item_id or not author:
+            raise ValueError("복원할 확인사항과 복원자 이름을 확인하세요.")
+
+        with self._lock:
+            item_values, _ = self._raw_values()
+            raw_items = _records(ITEM_HEADERS, item_values)
+            item = next(
+                (
+                    value for value in raw_items
+                    if str(value.get("item_id", "")) == review_item_id
+                    and str(value.get("archived_at", "")).strip()
+                ),
+                None,
+            )
+            if item is None:
+                active_item = next(
+                    (value for value in raw_items if str(value.get("item_id", "")) == review_item_id),
+                    None,
+                )
+                if active_item is not None:
+                    return
+                raise ValueError("복원할 확인사항을 찾을 수 없습니다.")
+            item_row = _find_item_row(item_values, review_item_id)
+            if item_row is None:
+                raise ValueError("복원할 확인사항의 원본 행을 찾을 수 없습니다.")
+            restored_at = _now()
+            self._execute(
+                self.service.spreadsheets().values().batchUpdate(
+                    spreadsheetId=self.spreadsheet_id,
+                    body={
+                        "valueInputOption": "RAW",
+                        "data": [
+                            {
+                                "range": f"'{ITEM_SHEET}'!F{item_row}:J{item_row}",
+                                "values": [[
+                                    author[:80],
+                                    item.get("created_at", ""),
+                                    restored_at,
+                                    item.get("confirmed_at", ""),
+                                    "",
+                                ]],
+                            }
+                        ],
+                    },
+                )
+            )
+            try:
+                self._audit(
+                    "review_item",
+                    review_item_id,
+                    "RESTORE",
+                    author[:80],
+                    before_status="ARCHIVED",
+                    after_status=str(item.get("status", "CONFIRMED")),
+                    details=str(item.get("title", ""))[:500],
+                )
+            except ReviewBoardConnectionError:
+                pass

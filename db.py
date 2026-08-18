@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from config import BACKUP_DIR, DB_PATH, ensure_directories
+from time_utils import now_kst, today_kst
 
 
 SCHEMA = """
@@ -675,11 +676,23 @@ def _upgrade_schema(conn: sqlite3.Connection) -> None:
 def init_db(path: Path | str = DB_PATH) -> None:
     with closing(connect(path)) as conn:
         conn.executescript(SCHEMA)
-        _upgrade_schema(conn)
-        conn.execute(
-            "INSERT INTO app_meta(key, value) VALUES('schema_version', '3') "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP"
-        )
+        version_row = conn.execute(
+            "SELECT value FROM app_meta WHERE key='schema_version'"
+        ).fetchone()
+        try:
+            current_version = int(version_row["value"]) if version_row else 0
+        except (TypeError, ValueError):
+            current_version = 0
+        if current_version > 3:
+            raise RuntimeError(
+                f"이 앱보다 새로운 데이터베이스 형식입니다. DB v{current_version}, 앱 지원 v3"
+            )
+        if current_version < 3:
+            _upgrade_schema(conn)
+            conn.execute(
+                "INSERT INTO app_meta(key, value) VALUES('schema_version', '3') "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP"
+            )
         conn.commit()
 
 
@@ -931,7 +944,7 @@ def add_task(
 def set_task_status(task_id: int, status: str, path: Path | str = DB_PATH) -> None:
     with transaction(path) as conn:
         before = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-        completed = datetime.now().isoformat(timespec="seconds") if status == "DONE" else None
+        completed = now_kst().isoformat(timespec="seconds") if status == "DONE" else None
         conn.execute("UPDATE tasks SET status=?, completed_at=? WHERE id=?", (status, completed, task_id))
         audit(conn, "task", task_id, "STATUS", before=before, after={"status": status})
 
@@ -1024,12 +1037,12 @@ def create_manual(
     with transaction(path) as conn:
         cur = conn.execute(
             "INSERT INTO manuals(title,category,current_standard,data_quality,last_verified) VALUES(?,?,?,?,?)",
-            (title, category, current_standard, "Verified", date.today().isoformat()),
+            (title, category, current_standard, "Verified", today_kst().isoformat()),
         )
         manual_id = int(cur.lastrowid)
         conn.execute(
             "INSERT INTO manual_revisions(manual_id,version,what_text,how_text,why_text,caution,change_summary,effective_from) VALUES(?,?,?,?,?,?,?,?)",
-            (manual_id, 1, what_text, how_text, why_text, caution, "최초 작성", date.today().isoformat()),
+            (manual_id, 1, what_text, how_text, why_text, caution, "최초 작성", today_kst().isoformat()),
         )
         audit(conn, "manual", manual_id, "CREATE", after={"title": title})
         return manual_id
@@ -1053,7 +1066,7 @@ def revise_manual(
         version = int(manual["version"]) + 1
         cur = conn.execute(
             "INSERT INTO manual_revisions(manual_id,version,what_text,how_text,why_text,caution,change_summary,effective_from,status) VALUES(?,?,?,?,?,?,?,?, 'CURRENT')",
-            (manual_id, version, what_text, how_text, why_text, caution, change_summary, date.today().isoformat()),
+            (manual_id, version, what_text, how_text, why_text, caution, change_summary, today_kst().isoformat()),
         )
         conn.execute(
             "UPDATE manuals SET version=?, current_standard=?, data_quality='Verified', updated_at=CURRENT_TIMESTAMP, status='CURRENT' WHERE id=?",
@@ -1066,8 +1079,9 @@ def revise_manual(
 def verify_manual(manual_id: int, path: Path | str = DB_PATH) -> None:
     with transaction(path) as conn:
         before = conn.execute("SELECT last_verified FROM manuals WHERE id=?", (manual_id,)).fetchone()
-        conn.execute("UPDATE manuals SET last_verified=?, data_quality='Verified', updated_at=CURRENT_TIMESTAMP WHERE id=?", (date.today().isoformat(), manual_id))
-        audit(conn, "manual", manual_id, "VERIFY", before=before, after={"last_verified": date.today().isoformat()})
+        verified_on = today_kst().isoformat()
+        conn.execute("UPDATE manuals SET last_verified=?, data_quality='Verified', updated_at=CURRENT_TIMESTAMP WHERE id=?", (verified_on, manual_id))
+        audit(conn, "manual", manual_id, "VERIFY", before=before, after={"last_verified": verified_on})
 
 
 def add_decision(values: dict[str, Any], path: Path | str = DB_PATH) -> int:
@@ -1098,7 +1112,7 @@ def archive_entity(entity: str, entity_id: int, restore: bool = False, path: Pat
     allowed = {"events": "event", "manuals": "manual", "decisions": "decision", "operation_logs": "operation_log", "references_data": "reference"}
     if entity not in allowed:
         raise ValueError("지원하지 않는 보관 대상입니다.")
-    value = None if restore else datetime.now().isoformat(timespec="seconds")
+    value = None if restore else now_kst().isoformat(timespec="seconds")
     with transaction(path) as conn:
         before = conn.execute(f"SELECT * FROM {entity} WHERE id=?", (entity_id,)).fetchone()
         conn.execute(f"UPDATE {entity} SET archived_at=? WHERE id=?", (value, entity_id))
@@ -1165,30 +1179,53 @@ def global_search(term: str, include_archived: bool = False, path: Path | str = 
         ).fetchall()
         results.extend(found_revisions)
         found_references = conn.execute(
-            "SELECT references_data.id, '참고자료' AS kind, manuals.title || ' · ' || references_data.title AS title, "
+            "SELECT references_data.id, '참고자료' AS kind, COALESCE(manuals.title,events.title,'참고자료') || ' · ' || references_data.title AS title, "
             "TRIM(COALESCE(references_data.description,'') || ' ' || references_data.url) AS snippet, references_data.created_at AS item_date, "
-            "'매뉴얼' AS target_page, manuals.id AS target_id, "
-            "CASE WHEN references_data.archived_at IS NULL AND manuals.archived_at IS NULL THEN 0 ELSE 1 END AS archived "
-            "FROM references_data JOIN manuals ON manuals.id=references_data.manual_id "
+            "CASE WHEN manuals.id IS NOT NULL THEN '매뉴얼' ELSE '행사' END AS target_page, "
+            "COALESCE(manuals.id,events.id) AS target_id, "
+            "CASE WHEN references_data.archived_at IS NULL AND COALESCE(manuals.archived_at,events.archived_at) IS NULL THEN 0 ELSE 1 END AS archived "
+            "FROM references_data LEFT JOIN manuals ON manuals.id=references_data.manual_id "
+            "LEFT JOIN events ON events.id=references_data.event_id "
             "WHERE (references_data.title LIKE ? OR COALESCE(references_data.description,'') LIKE ? OR references_data.url LIKE ?) "
-            + ("" if include_archived else "AND references_data.archived_at IS NULL AND manuals.status='CURRENT' AND manuals.archived_at IS NULL ")
+            + ("" if include_archived else "AND references_data.archived_at IS NULL AND "
+               "((manuals.id IS NOT NULL AND manuals.status='CURRENT' AND manuals.archived_at IS NULL) "
+               "OR (events.id IS NOT NULL AND events.archived_at IS NULL)) ")
             + "LIMIT 50",
             (like, like, like),
         ).fetchall()
         results.extend(found_references)
-    priority = {"매뉴얼": 0, "매뉴얼 준비항목": 1, "참고자료": 2, "결정": 3, "행사": 4, "체크리스트": 5, "운영로그": 6, "매뉴얼 이력": 7}
+        found_assignments = conn.execute(
+            "SELECT assignments.id, '예배 담당' AS kind, members.name || ' · ' || assignments.role AS title, "
+            "services.service_date || ' ' || services.service_type AS snippet, services.service_date AS item_date, "
+            "'예배 인원 현황' AS target_page, services.id AS target_id, 0 AS archived "
+            "FROM assignments JOIN members ON members.id=assignments.member_id "
+            "JOIN services ON services.id=assignments.service_id "
+            "WHERE members.name LIKE ? OR assignments.role LIKE ? OR COALESCE(assignments.raw_name,'') LIKE ? LIMIT 50",
+            (like, like, like),
+        ).fetchall()
+        results.extend(found_assignments)
+        found_calendar = conn.execute(
+            "SELECT id, '교회력' AS kind, title, TRIM(COALESCE(description,'') || ' ' || COALESCE(location,'')) AS snippet, "
+            "start_date AS item_date, '교회력' AS target_page, id AS target_id, "
+            "CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END AS archived FROM church_calendar_events "
+            "WHERE (title LIKE ? OR COALESCE(description,'') LIKE ? OR COALESCE(location,'') LIKE ?) "
+            + ("" if include_archived else "AND archived_at IS NULL AND status<>'CANCELLED' ") + "LIMIT 50",
+            (like, like, like),
+        ).fetchall()
+        results.extend(found_calendar)
+    priority = {"매뉴얼": 0, "매뉴얼 준비항목": 1, "참고자료": 2, "결정": 3, "행사": 4, "체크리스트": 5, "운영로그": 6, "매뉴얼 이력": 7, "예배 담당": 8, "교회력": 9}
     return sorted(results, key=lambda item: (item["archived"], priority.get(item["kind"], 9), item.get("item_date") or ""), reverse=False)
 
 
 def export_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> tuple[Path, dict[str, str]]:
     backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = now_kst().strftime("%Y%m%d_%H%M%S")
     table_names = [
         "events", "tasks", "event_reviews", "event_templates", "task_templates", "manuals", "manual_revisions",
         "decisions", "operation_logs", "references_data", "church_calendar_events", "attendance", "services", "service_sources", "members", "assignments",
         "review_items", "review_comments", "source_files", "unresolved_imports", "audit_logs",
     ]
-    payload: dict[str, Any] = {"exported_at": datetime.now().isoformat(), "schema_version": 3, "tables": {}}
+    payload: dict[str, Any] = {"exported_at": now_kst().isoformat(), "schema_version": 3, "tables": {}}
     csv_payloads: dict[str, str] = {}
     with closing(connect(path)) as conn:
         for table in table_names:
@@ -1203,3 +1240,16 @@ def export_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> 
     json_path = backup_dir / f"joyful_worship_ops_{stamp}.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     return json_path, csv_payloads
+
+
+def create_sqlite_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> Path:
+    """Create a native SQLite backup that can be restored as a database file."""
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    destination = backup_dir / f"joyful_worship_ops_{now_kst().strftime('%Y%m%d_%H%M%S')}.db"
+    with closing(connect(path)) as source, closing(sqlite3.connect(destination)) as target:
+        source.backup(target)
+    with closing(sqlite3.connect(destination)) as check_conn:
+        if check_conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            destination.unlink(missing_ok=True)
+            raise RuntimeError("생성한 SQLite 백업의 무결성 검사를 통과하지 못했습니다.")
+    return destination

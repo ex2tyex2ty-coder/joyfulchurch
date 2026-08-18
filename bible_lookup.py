@@ -147,6 +147,8 @@ _BIBLE_LINE_RE = re.compile(r"^\s*(?P<book>[^\d\s]+)(?P<chapter>[0-9]+):(?P<vers
 
 def extract_bible_references(text: str, limit: int = 30) -> list[BibleReference]:
     """Extract Korean Bible references in appearance order and remove duplicates."""
+    if limit < 1:
+        return []
     matches: list[tuple[int, list[BibleReference]]] = []
     for pattern in (_KOREAN_REFERENCE_RE, _COLON_REFERENCE_RE):
         for match in pattern.finditer(text or ""):
@@ -157,9 +159,12 @@ def extract_bible_references(text: str, limit: int = 30) -> list[BibleReference]
             if chapter < 1 or first_verse < 1 or last_verse < first_verse:
                 continue
             book_name, book_id = _ALIAS_TO_BOOK[match.group("book")]
+            # Bound the range before materializing it. Public input such as
+            # ``창 1:1-999999999`` must not allocate an enormous list.
+            bounded_last_verse = min(last_verse, first_verse + limit - 1)
             references = [
                 BibleReference(book_id, book_name, chapter, verse)
-                for verse in range(first_verse, last_verse + 1)
+                for verse in range(first_verse, bounded_last_verse + 1)
             ]
             matches.append((match.start(), references))
 

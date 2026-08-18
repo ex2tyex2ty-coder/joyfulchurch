@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sqlite3
+import uuid
 from collections import Counter, defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
@@ -25,6 +27,7 @@ from db import (
     relink_attendance_events,
     series_key,
 )
+from time_utils import iso_now_kst, now_kst, today_kst
 
 
 URL_RE = re.compile(r"https?://[^\s\]\)]+", re.I)
@@ -753,9 +756,11 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
                 existing = conn.execute("SELECT id FROM events WHERE event_date=? AND title=?", (service_date, event_title)).fetchone()
                 if existing:
                     event_id = int(existing["id"])
+                    imported_status = "COMPLETED" if service_date < today_kst().isoformat() else "PLANNING"
                     conn.execute(
-                        "UPDATE events SET service_id=?,service_type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        (service_id, service_type, event_id),
+                        "UPDATE events SET service_id=?,service_type=?,"
+                        "status=CASE WHEN source IS NOT NULL THEN ? ELSE status END,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (service_id, service_type, imported_status, event_id),
                     )
                 else:
                     previous = conn.execute(
@@ -765,7 +770,7 @@ def import_lineup_workbook(conn: sqlite3.Connection, path: Path, source_file_id:
                     event_cur = conn.execute(
                         "INSERT INTO events(title,series_key,category,event_date,status,event_template_id,previous_event_id,service_id,service_type,source,source_event_id,data_quality) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (event_title, series_key(special), "특별순서", service_date, "COMPLETED" if service_date < date.today().isoformat() else "PLANNING",
+                        (event_title, series_key(special), "특별순서", service_date, "COMPLETED" if service_date < today_kst().isoformat() else "PLANNING",
                          template_id, previous["id"] if previous else None, service_id, service_type, path.name, f"{sheet.title}:{col_index + 1}", quality),
                     )
                     event_id = int(event_cur.lastrowid)
@@ -859,11 +864,57 @@ def migrate(
     report_path: Path | None = IMPORT_REPORT_PATH,
 ) -> dict[str, Any]:
     ensure_directories()
-    if reset and db_path.exists():
-        db_path.unlink()
+    source_files = sorted(
+        path for path in source_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".xlsx", ".xlsm"}
+    )
+    if reset:
+        if not source_files:
+            raise RuntimeError("재구축할 Excel 원본이 없습니다. 최신 자료 업데이트를 먼저 완료하세요.")
+        temporary_db = db_path.with_name(f".{db_path.stem}.rebuild-{uuid.uuid4().hex}.db")
+        try:
+            report = migrate(
+                source_dir=source_dir,
+                db_path=temporary_db,
+                reset=False,
+                report_path=None,
+            )
+            with closing(connect(temporary_db)) as validation_conn:
+                integrity = validation_conn.execute("PRAGMA quick_check").fetchone()[0]
+                foreign_keys = validation_conn.execute("PRAGMA foreign_key_check").fetchall()
+            if integrity != "ok" or foreign_keys:
+                raise RuntimeError("새 데이터베이스 무결성 검사를 통과하지 못했습니다.")
+            if db_path.exists():
+                backup_dir = db_path.parent / "backups"
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                backup_path = backup_dir / f"{db_path.stem}_before_rebuild_{now_kst().strftime('%Y%m%d_%H%M%S')}.db"
+                with closing(connect(db_path)) as source_conn, closing(sqlite3.connect(backup_path)) as backup_conn:
+                    source_conn.backup(backup_conn)
+                    source_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                for sidecar in (
+                    db_path.with_name(db_path.name + "-wal"),
+                    db_path.with_name(db_path.name + "-shm"),
+                ):
+                    if sidecar.exists():
+                        sidecar.unlink()
+            os.replace(temporary_db, db_path)
+            if report_path is not None:
+                report_path.write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8",
+                )
+            return report
+        finally:
+            for leftover in (
+                temporary_db,
+                temporary_db.with_name(temporary_db.name + "-wal"),
+                temporary_db.with_name(temporary_db.name + "-shm"),
+            ):
+                if leftover.exists():
+                    leftover.unlink()
     init_db(db_path)
     report: dict[str, Any] = {
-        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "started_at": iso_now_kst(),
         "source_directory": str(source_dir),
         "source_files": [],
         "imported": defaultdict(int),
@@ -871,7 +922,7 @@ def migrate(
         "unresolved": 0,
         "data_quality": {},
     }
-    files = sorted([path for path in source_dir.rglob("*") if path.is_file() and path.suffix.lower() in {".xlsx", ".xlsm"}])
+    files = source_files
     with closing(connect(db_path)) as conn:
         run_cur = conn.execute("INSERT INTO import_runs(status) VALUES('RUNNING')")
         run_id = int(run_cur.lastrowid)
@@ -923,7 +974,7 @@ def migrate(
         quality_rows = conn.execute("SELECT data_quality, COUNT(*) AS count FROM attendance GROUP BY data_quality").fetchall()
         report["data_quality"] = {item["data_quality"]: item["count"] for item in quality_rows}
         report["imported"] = dict(report["imported"])
-        report["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        report["finished_at"] = iso_now_kst()
         report_json = json.dumps(report, ensure_ascii=False, indent=2, default=str)
         conn.execute("UPDATE import_runs SET finished_at=CURRENT_TIMESTAMP,status='SUCCESS',report_json=? WHERE id=?", (report_json, run_id))
         conn.execute(
