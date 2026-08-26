@@ -159,7 +159,10 @@ def filter_review_items(
             continue
         searchable = " ".join(
             str(item.get(key, ""))
-            for key in ("title", "description", "category", "priority", "owner", "due_date", "created_by", "updated_by")
+            for key in (
+                "title", "description", "category", "priority", "owner", "due_date",
+                "created_by", "updated_by", "comment_text",
+            )
         ).casefold()
         normalized_searchable = " ".join(searchable.split())
         if search_terms and any(search_term not in normalized_searchable for search_term in search_terms):

@@ -153,6 +153,9 @@ a { color:#AD4700; }
 .compact-stat:hover { box-shadow:0 4px 14px rgba(88,52,24,.10); }
 .compact-stat .label { color:#5B493D; font-size:.77rem; line-height:1.2; font-weight:600; }
 .compact-stat .value { color:#2C1F16; font-size:1.2rem; line-height:1.15; font-weight:800; margin-top:.25rem; overflow-wrap:anywhere; }
+.bible-result-summary { display:flex; align-items:center; flex-wrap:wrap; gap:.35rem; margin:.15rem 0 .6rem; }
+.bible-result-summary span { display:inline-flex; align-items:center; gap:.28rem; background:#FFF8EF; border:1px solid #E8CFA8; border-radius:999px; padding:.25rem .55rem; color:#6B584A; font-size:.76rem; line-height:1.2; }
+.bible-result-summary strong { color:#8B4A00; font-size:.84rem; font-weight:800; }
 .ops-list { display:grid; gap:.5rem; margin:.45rem 0 .75rem; }
 .ops-list-item { background:#FFFFFF; border:1px solid #E4CCB6; border-left:4px solid #FF8207; border-radius:14px; padding:.8rem .9rem; transition:box-shadow .15s,border-left-color .15s; }
 .ops-list-item:hover { box-shadow:0 4px 16px rgba(88,52,24,.10); border-left-color:#D94E00; }
@@ -642,7 +645,7 @@ REVIEW_STATUS_LABELS = {
     "CONFIRMED": "확인 완료",
 }
 
-REVIEW_CATEGORIES = ["예배 준비", "음향", "영상", "조명", "무대·진행", "시설·장비", "인력·일정", "자료·콘텐츠", "기타"]
+REVIEW_CATEGORIES = ["반복 이슈", "예배 준비", "음향", "영상", "조명", "무대·진행", "시설·장비", "인력·일정", "자료·콘텐츠", "기타"]
 REVIEW_PRIORITY_LABELS = {
     "NORMAL": "일반",
     "HIGH": "중요",
@@ -814,6 +817,77 @@ def review_reply_dialog(
                 st.error(str(exc))
 
 
+@st.dialog("반복 이슈 기록")
+def recurring_issue_create_dialog(store: GoogleReviewBoardStore) -> None:
+    st.caption("제목만 적어도 등록됩니다. 담당자·기한 같은 세부 설정은 필요할 때만 일반 확인사항에서 사용하세요.")
+    with st.form("new_recurring_issue", clear_on_submit=True):
+        title = st.text_input("무슨 문제가 반복되나요?", placeholder="예: 주일예배 때 본당 실내온도가 높음")
+        description = st.text_area(
+            "상황 메모 · 선택",
+            placeholder="처음 발견한 상황이나 바로 한 조치가 있으면 짧게 적어주세요.",
+            height=100,
+        )
+        author = st.text_input(
+            "작성자",
+            value=st.session_state.get("operator_name", ""),
+            placeholder="이름",
+        )
+        if st.form_submit_button("이슈 등록", type="primary", width="stretch"):
+            try:
+                store.create_item(title, description, author, "반복 이슈", "NORMAL", "", "")
+                _cached_review_board_snapshot.clear()
+                rerun("반복 이슈를 등록했습니다. 같은 문제가 생기면 ‘또 발생’을 눌러주세요.")
+            except (ValueError, ReviewBoardConnectionError) as exc:
+                st.error(str(exc))
+
+
+@st.dialog("같은 문제 또 발생")
+def recurring_issue_repeat_dialog(store: GoogleReviewBoardStore, item: dict[str, object]) -> None:
+    st.markdown(f"**{item['title']}**")
+    with st.form(f"repeat_issue_{item['id']}", clear_on_submit=True):
+        note = st.text_input("메모 · 선택", placeholder="예: 예배 시작 20분 뒤에도 실내가 더웠음")
+        author = st.text_input(
+            "기록자",
+            value=st.session_state.get("operator_name", ""),
+            placeholder="이름",
+        )
+        if st.form_submit_button("또 발생으로 기록", type="primary", width="stretch"):
+            body = "[또 발생]" + (f"\n{note.strip()}" if note.strip() else "")
+            try:
+                store.add_comment(str(item["id"]), author, body, "IN_PROGRESS")
+                _cached_review_board_snapshot.clear()
+                st.session_state["expanded_review_item"] = str(item["id"])
+                rerun("반복 발생 횟수에 추가했습니다.")
+            except (ValueError, ReviewBoardConnectionError) as exc:
+                st.error(str(exc))
+
+
+@st.dialog("운영 기준 확정")
+def recurring_issue_standard_dialog(store: GoogleReviewBoardStore, item: dict[str, object]) -> None:
+    st.markdown(f"**{item['title']}**")
+    st.caption("앞으로 같은 상황에서 바로 적용할 수 있도록 한 문장으로 적어주세요.")
+    with st.form(f"standard_issue_{item['id']}", clear_on_submit=True):
+        standard = st.text_area(
+            "앞으로 어떻게 하기로 했나요?",
+            placeholder="예: 주일예배 60분 전 냉방을 시작하고, 예배 20분 전 24~25℃인지 확인한다.",
+            height=120,
+        )
+        author = st.text_input(
+            "확정한 사람",
+            value=st.session_state.get("operator_name", ""),
+            placeholder="이름 또는 회의명",
+        )
+        if st.form_submit_button("기준 확정", type="primary", width="stretch"):
+            body = f"[기준 확정]\n{standard.strip()}"
+            try:
+                store.add_comment(str(item["id"]), author, body, "CONFIRMED")
+                _cached_review_board_snapshot.clear()
+                st.session_state["expanded_review_item"] = str(item["id"])
+                rerun("운영 기준을 확정하고 기록에 남겼습니다.")
+            except (ValueError, ReviewBoardConnectionError) as exc:
+                st.error(str(exc))
+
+
 def shared_review_board() -> None:
     store, connection_error = review_board_store()
     if store is None:
@@ -845,6 +919,15 @@ def shared_review_board() -> None:
         1 for item in snapshot["items"]
         if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < today_kst().isoformat()
     )
+    recurring_items = [item for item in snapshot["items"] if item.get("category") == "반복 이슈"]
+    standard_issue_ids = {
+        str(item["id"])
+        for item in recurring_items
+        if any(
+            str(comment.get("body") or "").startswith("[기준 확정]")
+            for comment in snapshot["comments"].get(str(item["id"]), [])
+        )
+    }
 
     title_col, action_col = st.columns([0.62, 0.38])
     title_col.markdown(f"#### 팀 확인 게시판 · 미완료 {active_count}건")
@@ -878,6 +961,34 @@ def shared_review_board() -> None:
             st.session_state["review_status_filter"] = "확인 완료"
             st.rerun()
 
+    issue_col, standard_col = st.columns(2)
+    if issue_col.button(
+        f"반복 이슈 {len(recurring_items)}건",
+        key="show_recurring_review_items",
+        width="stretch",
+        disabled=not recurring_items,
+    ):
+        st.session_state["review_category_filter"] = "반복 이슈"
+        st.session_state["review_status_filter"] = "전체 상태"
+        st.rerun()
+    if standard_col.button(
+        f"확정 기준 {len(standard_issue_ids)}건",
+        key="show_review_standards",
+        width="stretch",
+        disabled=not standard_issue_ids,
+    ):
+        st.session_state["review_category_filter"] = "반복 이슈"
+        st.session_state["review_status_filter"] = "확인 완료"
+        st.rerun()
+
+    board_search = st.text_input(
+        "게시판·확정 기준 검색",
+        placeholder="에어컨, 온도, 본당처럼 기억나는 단어를 입력하세요",
+        key="review_board_search",
+    )
+    if board_search:
+        st.caption("검색할 때는 완료된 기록과 댓글 속 확정 기준도 함께 찾습니다.")
+
     status_options = {
         "미완료 전체": "OPEN",
         "확인 필요": "REVIEW_REQUIRED",
@@ -893,15 +1004,21 @@ def shared_review_board() -> None:
         selected_status_label = filter_col.selectbox("상태", list(status_options), key="review_status_filter")
         selected_category = category_col.selectbox("분류", category_options, key="review_category_filter")
         selected_priority_label = priority_col.selectbox("중요도", list(priority_options), key="review_priority_filter")
-        board_search = st.text_input(
-            "게시판 검색",
-            placeholder="제목, 내용, 담당자, 작성자 검색",
-            key="review_board_search",
-        )
         display_limit = st.selectbox("한 번에 보기", [10, 25, 50], index=1, key="review_display_limit")
+    searchable_items = []
+    for item in snapshot["items"]:
+        enriched = dict(item)
+        enriched["comment_text"] = " ".join(
+            str(comment.get("body") or "")
+            for comment in snapshot["comments"].get(str(item["id"]), [])
+        )
+        searchable_items.append(enriched)
+    effective_status_filter = status_options[selected_status_label]
+    if board_search and effective_status_filter == "OPEN":
+        effective_status_filter = "ALL"
     review_items = filter_review_items(
-        snapshot["items"],
-        status_filter=status_options[selected_status_label],
+        searchable_items,
+        status_filter=effective_status_filter,
         category=selected_category,
         term=board_search,
     )
@@ -929,8 +1046,19 @@ def shared_review_board() -> None:
     for item in review_items:
         label = REVIEW_STATUS_LABELS[item["status"]]
         priority_label = REVIEW_PRIORITY_LABELS.get(str(item.get("priority")), "일반")
+        comments = snapshot["comments"].get(str(item["id"]), [])
+        repeat_comments = [
+            comment for comment in comments
+            if str(comment.get("body") or "").startswith("[또 발생]")
+        ]
+        standard_comments = [
+            comment for comment in comments
+            if str(comment.get("body") or "").startswith("[기준 확정]")
+        ]
+        is_recurring_issue = item.get("category") == "반복 이슈"
+        repeat_label = f" · 반복 {1 + len(repeat_comments)}회" if is_recurring_issue else ""
         with st.expander(
-            f"[{label}] {item['title']} · {item.get('category') or '기타'} · 댓글 {item['comment_count']}개",
+            f"[{label}] {item['title']} · {item.get('category') or '기타'}{repeat_label} · 댓글 {item['comment_count']}개",
             expanded=st.session_state.get("expanded_review_item") == str(item["id"]),
         ):
             tone = "danger" if item.get("priority") == "URGENT" else ("warn" if item.get("priority") == "HIGH" else "")
@@ -948,11 +1076,14 @@ def shared_review_board() -> None:
                 details.append(f"{due_state} {item['due_date']}")
             if details:
                 st.caption(" · ".join(details))
+            if standard_comments:
+                latest_standard = str(standard_comments[-1].get("body") or "").removeprefix("[기준 확정]").strip()
+                if latest_standard:
+                    st.success(f"확정 기준 · {latest_standard}")
             st.caption(
                 f"등록 {item['created_by']} · {str(item['created_at'])[:16].replace('T', ' ')}"
                 + (f" · 최근 확인 {item['updated_by']}" if item["updated_by"] else "")
             )
-            comments = snapshot["comments"].get(str(item["id"]), [])
             comment_by_id = {str(comment.get("comment_id")): comment for comment in comments}
             for comment in comments:
                 with st.container(border=True):
@@ -964,13 +1095,37 @@ def shared_review_board() -> None:
                         f"{comment['author']} · {str(comment['created_at'])[:16].replace('T', ' ')}"
                         + (f" · {status_note}" if status_note else "")
                     )
-                    st.write(comment["body"])
+                    comment_body = str(comment.get("body") or "")
+                    if comment_body.startswith("[또 발생]"):
+                        repeat_note = comment_body.removeprefix("[또 발생]").strip()
+                        st.markdown(f"{badge('또 발생', 'warn')} {html.escape(repeat_note or '같은 문제가 다시 발생했습니다.')}", unsafe_allow_html=True)
+                    elif comment_body.startswith("[기준 확정]"):
+                        standard_note = comment_body.removeprefix("[기준 확정]").strip()
+                        st.markdown(f"{badge('기준 확정')} {html.escape(standard_note)}", unsafe_allow_html=True)
+                    else:
+                        st.write(comment_body)
 
             if has_access("TEAM"):
+                if is_recurring_issue:
+                    repeat_col, standard_col = st.columns(2)
+                    if repeat_col.button(
+                        "또 발생",
+                        key=f"repeat_review_issue_{item['id']}",
+                        type="secondary",
+                        width="stretch",
+                    ):
+                        recurring_issue_repeat_dialog(store, item)
+                    if standard_col.button(
+                        "기준 변경" if standard_comments else "기준 확정",
+                        key=f"standard_review_issue_{item['id']}",
+                        type="primary",
+                        width="stretch",
+                    ):
+                        recurring_issue_standard_dialog(store, item)
                 if st.button(
-                    "댓글·진행 상태 남기기",
+                    "의견·댓글 남기기" if is_recurring_issue else "댓글·진행 상태 남기기",
                     key=f"open_review_reply_{item['id']}",
-                    type="primary",
+                    type="secondary" if is_recurring_issue else "primary",
                     width="stretch",
                 ):
                     review_reply_dialog(store, item, comments)
@@ -1028,10 +1183,19 @@ def shared_review_board() -> None:
     st.divider()
     if not has_access("TEAM"):
         st.caption("새 확인사항과 댓글 작성은 사이드바에서 팀원 권한으로 로그인한 뒤 사용할 수 있습니다.")
-    if st.button(
-        "＋ 새 확인사항 작성",
-        key="open_review_item_form",
+    recurring_col, general_col = st.columns(2)
+    if recurring_col.button(
+        "＋ 반복 이슈 기록",
+        key="open_recurring_issue_form",
         type="primary",
+        width="stretch",
+        disabled=not has_access("TEAM"),
+    ):
+        recurring_issue_create_dialog(store)
+    if general_col.button(
+        "＋ 일반 확인사항",
+        key="open_review_item_form",
+        type="secondary",
         width="stretch",
         disabled=not has_access("TEAM"),
     ):
@@ -1284,6 +1448,24 @@ def review_board_summary() -> None:
         st.markdown(f"**{item['title']}**  \n{meta}")
     if not urgent:
         st.caption("긴급·중요 확인사항이 없습니다.")
+    recurring_items = [item for item in items if item.get("category") == "반복 이슈"]
+    open_recurring_count = sum(1 for item in recurring_items if item.get("status") != "CONFIRMED")
+    confirmed_standard_count = sum(
+        1 for item in recurring_items
+        if any(
+            str(comment.get("body") or "").startswith("[기준 확정]")
+            for comment in snapshot["comments"].get(str(item["id"]), [])
+        )
+    )
+    if recurring_items:
+        if st.button(
+            f"반복 이슈 {open_recurring_count}건 · 확정 기준 {confirmed_standard_count}건 보기",
+            key="open_recurring_review_items",
+            width="stretch",
+        ):
+            st.session_state["review_category_filter"] = "반복 이슈"
+            st.session_state["review_status_filter"] = "전체 상태"
+            navigate("팀 확인")
     if st.button("팀 확인 게시판 전체 보기", key="open_full_review_board", width="stretch"):
         navigate("팀 확인")
 
@@ -2517,9 +2699,12 @@ def bible_page() -> None:
         st.warning("인식할 수 있는 성경 구절 표기가 없습니다. 예: 창:1:1 또는 창세기 1장 1절")
         return
 
-    compact_stats(
-        [("인식된 구절", f"{len(references)}개"), ("본문 확인", f"{len(verses)}개")],
-        columns=2,
+    st.markdown(
+        '<div class="bible-result-summary">'
+        f'<span>인식된 구절 <strong>{len(references)}개</strong></span>'
+        f'<span>본문 확인 <strong>{len(verses)}개</strong></span>'
+        '</div>',
+        unsafe_allow_html=True,
     )
     if result.get("omitted_count"):
         st.warning("한 번에 최대 100개 구절까지 처리합니다. 100개 이후 구절은 파일을 나누어 다시 확인해 주세요.")
