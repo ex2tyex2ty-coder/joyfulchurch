@@ -81,42 +81,25 @@ px.defaults.color_discrete_sequence = ["#FF8207", "#B84B00", "#FFC166", "#5B4A3E
 
 CSS = """
 <style>
-:root { --ink:#2C1F16; --orange:#FF8207; --orange-dark:#B84B00; --orange-soft:#FFF0DE; --cream:#FFFDF9; --red:#A33B32; color-scheme:light !important; }
+:root {
+  --brand:#FF8207; --brand-pressed:#E96F00; --brand-soft:#FFF1E3;
+  --bg:#F7F8FA; --surface:#FFFFFF; --text:#191F28; --text-2:#4E5968;
+  --text-3:#8B95A1; --line:#E5E8EB; --danger:#D64545; --warning:#B86E00;
+  --shadow:0 4px 18px rgba(25,31,40,.055); color-scheme:light !important;
+}
 html, body, .stApp { color-scheme:light !important; }
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
-  background:#FFFDF9 !important; color:#30251D !important;
+html, body, [class*="css"] { font-family:Pretendard,"Noto Sans KR","Apple SD Gothic Neo","Segoe UI",sans-serif; }
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+  background:var(--bg) !important; color:var(--text) !important;
 }
-[data-testid="stHeader"] { background:rgba(255,253,249,.96) !important; }
-[data-testid="stToolbar"] button, [data-testid="stHeaderActionElements"] button { color:#2C1F16 !important; }
-[data-testid="stSidebar"] { background:#2E241D; }
-[data-testid="stSidebar"] * { color:#FFF9F2 !important; }
-[data-testid="stSidebar"] input { color:#30251D !important; }
-/* Keep the sidebar open/close control visible in System and Dark modes. */
-[data-testid="stSidebarCollapseButton"] button,
-[data-testid="stSidebarCollapsedControl"] button,
-[data-testid="collapsedControl"] button,
-button[data-testid="stExpandSidebarButton"],
-button[data-testid="stBaseButton-headerNoPadding"] {
-  -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
-  background:#FF8207 !important; background-image:none !important;
-  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
-  border:2px solid #FFFFFF !important; border-radius:999px !important;
-  width:2.65rem !important; height:2.65rem !important; min-width:2.65rem !important;
-  opacity:1 !important; box-shadow:0 2px 8px rgba(0,0,0,.28) !important;
+[data-testid="stMainBlockContainer"] {
+  max-width:1040px; padding-top:3.7rem; padding-bottom:5rem;
+  color:var(--text) !important;
 }
-[data-testid="stSidebarCollapseButton"] button *,
-[data-testid="stSidebarCollapsedControl"] button *,
-[data-testid="collapsedControl"] button *,
-button[data-testid="stExpandSidebarButton"] *,
-button[data-testid="stBaseButton-headerNoPadding"] * {
-  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
-  fill:#2C1F16 !important; stroke:#2C1F16 !important; opacity:1 !important;
-}
-[data-testid="stSidebarCollapseButton"] svg,
-[data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="collapsedControl"] svg,
-button[data-testid="stExpandSidebarButton"] svg { fill:#2C1F16 !important; color:#2C1F16 !important; }
-h1,h2,h3,h4,h5,h6 { color:#2C1F16 !important; letter-spacing:-.02em; }
+[data-testid="stHeader"] { background:rgba(247,248,250,.94) !important; backdrop-filter:blur(12px); }
+[data-testid="stToolbar"] button, [data-testid="stHeaderActionElements"] button { color:var(--text) !important; }
+h1,h2,h3,h4,h5,h6 { color:var(--text) !important; letter-spacing:-.035em; }
+h2 { margin-top:0; }
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] li,
 [data-testid="stMainBlockContainer"] [data-testid="stMarkdownContainer"] span,
@@ -126,66 +109,126 @@ h1,h2,h3,h4,h5,h6 { color:#2C1F16 !important; letter-spacing:-.02em; }
 [data-testid="stMainBlockContainer"] [data-testid="stWidgetLabel"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stCheckbox"] p,
 [data-testid="stMainBlockContainer"] [data-testid="stToggle"] p {
-  color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important; opacity:1 !important;
+  color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; opacity:1 !important;
 }
-a { color:#AD4700; }
-.ops-hero { background:linear-gradient(135deg,#FF9420 0%,#FF6B00 60%,#D94E00 100%); color:#2C1F16; border-radius:22px; padding:1.5rem 1.6rem; margin-bottom:1.2rem; box-shadow:0 12px 32px rgba(184,75,0,.22),0 2px 8px rgba(184,75,0,.12); position:relative; overflow:hidden; }
-.ops-hero::after { content:''; position:absolute; top:-30px; right:-20px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.08); pointer-events:none; }
-.ops-hero h1 { color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; margin:0; font-size:1.9rem; font-weight:900; letter-spacing:-.03em; }
-.ops-hero p { color:#4A2E1C !important; -webkit-text-fill-color:#4A2E1C !important; margin:.4rem 0 0; opacity:1 !important; font-size:.97rem; }
-.ops-card { background:white; border:1px solid #EBD6C2; border-radius:18px; padding:1.1rem 1.15rem; min-height:110px; box-shadow:0 2px 8px rgba(88,52,24,.06); transition:box-shadow .2s; }
-.ops-card:hover { box-shadow:0 6px 20px rgba(88,52,24,.12); }
-.ops-card .label { color:#6B584B; font-size:.82rem; margin-bottom:.25rem; font-weight:600; letter-spacing:.01em; }
-.ops-card .value { color:#2C1F16; font-weight:800; font-size:1.6rem; letter-spacing:-.02em; }
-.ops-card .note { color:#735F50; font-size:.78rem; margin-top:.3rem; }
-.ops-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; }
-.ops-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.65rem; margin:.5rem 0 1rem; }
-.ops-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; padding:.75rem .85rem; }
-.ops-stat .label { color:#5B493D; font-size:.82rem; }
-.ops-stat .value { color:#2C1F16; font-size:1.35rem; font-weight:800; margin-top:.2rem; }
-.review-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.45rem; margin:.55rem 0 .9rem; }
-.review-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; min-height:78px; padding:.6rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; transition:box-shadow .15s; }
-.review-stat:hover { box-shadow:0 4px 14px rgba(88,52,24,.10); }
-.review-stat .label { color:#5B493D; font-size:.78rem; line-height:1.2; white-space:nowrap; font-weight:600; }
-.review-stat .value { color:#2C1F16; font-size:1.35rem; line-height:1.15; font-weight:800; margin-top:.25rem; }
-.compact-stat-grid { display:grid; grid-template-columns:repeat(var(--stat-cols,4),minmax(0,1fr)); gap:.45rem; margin:.55rem 0 .9rem; }
-.compact-stat { background:#FFFFFF; border:1px solid #E4CCB6; border-radius:14px; min-height:76px; padding:.6rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; transition:box-shadow .15s; }
-.compact-stat:hover { box-shadow:0 4px 14px rgba(88,52,24,.10); }
-.compact-stat .label { color:#5B493D; font-size:.77rem; line-height:1.2; font-weight:600; }
-.compact-stat .value { color:#2C1F16; font-size:1.2rem; line-height:1.15; font-weight:800; margin-top:.25rem; overflow-wrap:anywhere; }
-.bible-result-summary { display:flex; align-items:center; flex-wrap:wrap; gap:.35rem; margin:.15rem 0 .6rem; }
-.bible-result-summary span { display:inline-flex; align-items:center; gap:.28rem; background:#FFF8EF; border:1px solid #E8CFA8; border-radius:999px; padding:.25rem .55rem; color:#6B584A; font-size:.76rem; line-height:1.2; }
-.bible-result-summary strong { color:#8B4A00; font-size:.84rem; font-weight:800; }
-.ops-list { display:grid; gap:.5rem; margin:.45rem 0 .75rem; }
-.ops-list-item { background:#FFFFFF; border:1px solid #E4CCB6; border-left:4px solid #FF8207; border-radius:14px; padding:.8rem .9rem; transition:box-shadow .15s,border-left-color .15s; }
-.ops-list-item:hover { box-shadow:0 4px 16px rgba(88,52,24,.10); border-left-color:#D94E00; }
-.ops-list-item .meta { color:#735F50; font-size:.8rem; margin-bottom:.2rem; }
-.ops-list-item .title { color:#2C1F16; font-size:1rem; font-weight:800; }
-.ops-list-item .note { color:#665448; font-size:.82rem; margin-top:.2rem; }
-.ops-attendance { background:linear-gradient(135deg,#FFFFFF 70%,#FFF4E8 100%); border:1.5px solid #DEC4A8; border-left:5px solid #FF8207; border-radius:18px; padding:1.1rem 1.2rem; margin:.4rem 0 1rem; box-shadow:0 2px 10px rgba(88,52,24,.07); }
-.ops-attendance .date { color:#735F50; font-size:.88rem; font-weight:600; }
-.ops-attendance .total { color:#2C1F16; font-size:2.2rem; font-weight:900; line-height:1.15; margin:.35rem 0 .6rem; letter-spacing:-.03em; }
+[data-testid="stCaptionContainer"] { line-height:1.55; }
+a { color:#B95000; }
+
+/* Calm, compact navigation. */
+[data-testid="stSidebar"] { background:#FFFFFF !important; border-right:1px solid var(--line); }
+[data-testid="stSidebar"] * { color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; }
+[data-testid="stSidebar"] h2, [data-testid="stSidebar"] strong { color:var(--text) !important; -webkit-text-fill-color:var(--text) !important; }
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding:1.45rem .9rem 2rem; }
+[data-testid="stSidebar"] hr { border-color:var(--line) !important; margin:.85rem 0; }
+[data-testid="stSidebar"] [role="radiogroup"] { gap:.15rem; }
+[data-testid="stSidebar"] [role="radiogroup"] label {
+  min-height:42px; padding:.5rem .55rem !important; border-radius:10px; transition:background .15s;
+}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover { background:#F2F4F6; }
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) { background:var(--brand-soft); }
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
+  color:#A64500 !important; -webkit-text-fill-color:#A64500 !important; font-weight:800 !important;
+}
+[data-testid="stSidebar"] [data-testid="stButton"] button {
+  background:transparent !important; border:0 !important; color:var(--text-2) !important;
+  box-shadow:none !important; justify-content:flex-start !important; padding:.45rem .55rem !important;
+}
+[data-testid="stSidebar"] [data-testid="stButton"] button:hover { background:#F2F4F6 !important; }
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button {
+  background:#F2F4F6 !important; border:0 !important; color:var(--text-2) !important;
+  box-shadow:none !important; border-radius:10px !important;
+}
+
+/* The navigation control stays visible even when the phone is in dark mode. */
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="collapsedControl"] button,
+button[data-testid="stExpandSidebarButton"],
+button[data-testid="stBaseButton-headerNoPadding"] {
+  -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
+  background:var(--brand) !important; background-image:none !important;
+  color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
+  border:2px solid #FFFFFF !important; border-radius:999px !important;
+  width:2.45rem !important; height:2.45rem !important; min-width:2.45rem !important;
+  opacity:1 !important; box-shadow:0 3px 10px rgba(25,31,40,.22) !important;
+}
+[data-testid="stSidebarCollapseButton"] button *,
+[data-testid="stSidebarCollapsedControl"] button *,
+[data-testid="collapsedControl"] button *,
+button[data-testid="stExpandSidebarButton"] *,
+button[data-testid="stBaseButton-headerNoPadding"] * {
+  color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
+  fill:var(--text) !important; stroke:var(--text) !important; opacity:1 !important;
+}
+
+/* Page and section hierarchy. */
+.ops-hero { background:transparent; padding:.25rem 0 .7rem; margin:0 0 1.25rem; }
+.ops-hero::after { display:none; }
+.ops-hero .eyebrow, .ops-dashboard-head .eyebrow {
+  color:var(--text-3) !important; -webkit-text-fill-color:var(--text-3) !important;
+  font-size:.82rem; font-weight:700; margin-bottom:.35rem;
+}
+.ops-hero h1 { margin:0; font-size:1.8rem; font-weight:850; line-height:1.25; }
+.ops-hero p { color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; margin:.45rem 0 0; font-size:.96rem; line-height:1.55; }
+.ops-dashboard-head { margin:.1rem 0 1.45rem; }
+.ops-dashboard-head h1 { margin:0; font-size:1.9rem; font-weight:850; line-height:1.2; }
+.ops-section-gap { height:2.65rem; }
+.ops-section-title { margin:0 0 .75rem; font-size:1.18rem; font-weight:850; color:var(--text); letter-spacing:-.025em; }
+.ops-empty { background:#FFFFFF; border-radius:16px; padding:1rem 1.1rem; color:var(--text-2); line-height:1.55; box-shadow:var(--shadow); }
+
+/* Cards rely on spacing and a quiet surface instead of orange borders. */
+.ops-card-grid { display:grid; grid-template-columns:1.2fr .8fr; gap:.7rem; }
+.ops-card { background:var(--surface); border:0; border-radius:20px; padding:1.05rem 1.15rem; min-height:118px; box-shadow:var(--shadow); }
+.ops-card .label { color:var(--text-2); font-size:.84rem; margin-bottom:.35rem; font-weight:700; }
+.ops-card .value { color:var(--text); font-weight:900; font-size:1.9rem; line-height:1.1; letter-spacing:-.045em; }
+.ops-card.primary .value { font-size:2.75rem; }
+.ops-card .note { color:var(--text-3); font-size:.79rem; margin-top:.45rem; }
+.ops-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.55rem; margin:.5rem 0 1rem; }
+.ops-stat, .review-stat, .compact-stat {
+  background:#FFFFFF; border:0; border-radius:16px; box-shadow:var(--shadow);
+}
+.ops-stat { padding:.78rem .9rem; }
+.ops-stat .label, .review-stat .label, .compact-stat .label { color:var(--text-3); font-size:.78rem; font-weight:650; }
+.ops-stat .value, .review-stat .value, .compact-stat .value { color:var(--text); font-weight:850; letter-spacing:-.025em; }
+.ops-stat .value { font-size:1.35rem; margin-top:.18rem; }
+.review-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.4rem; margin:.5rem 0 .85rem; }
+.review-stat { min-height:76px; padding:.58rem .25rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.review-stat .label { white-space:nowrap; }
+.review-stat .value { font-size:1.3rem; line-height:1.15; margin-top:.2rem; }
+.compact-stat-grid { display:grid; grid-template-columns:repeat(var(--stat-cols,4),minmax(0,1fr)); gap:.4rem; margin:.5rem 0 .85rem; }
+.compact-stat { min-height:72px; padding:.55rem .3rem; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.compact-stat .value { font-size:1.16rem; margin-top:.2rem; overflow-wrap:anywhere; }
+.ops-list { display:grid; gap:.55rem; margin:.45rem 0 .8rem; }
+.ops-list-item { background:#FFFFFF; border:0; border-radius:16px; padding:.9rem 1rem; box-shadow:var(--shadow); }
+.ops-list-item .meta { color:var(--text-3); font-size:.78rem; margin-bottom:.25rem; }
+.ops-list-item .title { color:var(--text); font-size:1rem; font-weight:800; }
+.ops-list-item .note { color:var(--text-2); font-size:.82rem; margin-top:.25rem; }
+.ops-attendance { background:#FFFFFF; border:0; border-radius:20px; padding:1.15rem 1.2rem; margin:.4rem 0 1rem; box-shadow:var(--shadow); }
+.ops-attendance .date { color:var(--text-3); font-size:.86rem; font-weight:650; }
+.ops-attendance .total { color:var(--text); font-size:2.35rem; font-weight:900; line-height:1.12; margin:.35rem 0 .7rem; letter-spacing:-.045em; }
 .ops-attendance .chips { display:flex; flex-wrap:wrap; gap:.4rem; }
-.ops-chip { display:inline-block; background:#FFF0DE; color:#6B2C00 !important; border-radius:999px; padding:.32rem .7rem; font-size:.84rem; font-weight:700; border:1px solid #F0CEAB; }
-.st-key-dashboard_attendance_summary button { min-height:3.15rem !important; justify-content:flex-start !important; text-align:left !important; padding:.7rem .9rem !important; line-height:1.35 !important; }
-.st-key-dashboard_attendance_summary button p { text-align:left !important; }
-.ops-dashboard-head { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:.15rem 0 1.1rem; padding-bottom:.9rem; border-bottom:2px solid #EBD6C2; }
-.ops-dashboard-head h1 { margin:0; font-size:1.8rem; font-weight:900; letter-spacing:-.03em; }
-.ops-dashboard-head > span { color:#735F50; font-size:.88rem; white-space:nowrap; background:#F5EDE3; padding:.25rem .6rem; border-radius:999px; font-weight:600; }
-.ops-badge { display:inline-block; border-radius:999px; padding:.17rem .55rem; font-size:.72rem; font-weight:700; background:#FFF0DE; color:#963D00 !important; -webkit-text-fill-color:#963D00 !important; margin-right:.25rem; }
-.ops-badge.warn { background:#FFF1DB; color:#7A4800 !important; -webkit-text-fill-color:#7A4800 !important; }
-.ops-badge.danger { background:#FCE8E6; color:#8F2F28 !important; -webkit-text-fill-color:#8F2F28 !important; }
-.ops-badge.gray { background:#EDF0F2; color:#46565F !important; -webkit-text-fill-color:#46565F !important; }
-.ops-item { background:white; border:1px solid #EBD6C2; border-left:4px solid #FF8207; border-radius:12px; padding:.8rem .9rem; margin:.45rem 0; }
-.ops-item.warn { border-left-color:#E09F3E; }
-.ops-item.danger { border-left-color:#A33B32; }
-.review-comment { background:#FFF8F0; border:1px solid #EBD6C2; border-radius:10px; padding:.65rem .75rem; margin:.35rem 0; }
-.muted { color:#665448 !important; -webkit-text-fill-color:#665448 !important; font-size:.87rem; }
+.ops-chip { display:inline-block; background:#F2F4F6; color:var(--text-2) !important; border-radius:999px; padding:.34rem .68rem; font-size:.82rem; font-weight:700; border:0; }
+.ops-badge { display:inline-block; border-radius:999px; padding:.18rem .52rem; font-size:.72rem; font-weight:750; background:var(--brand-soft); color:#A64500 !important; -webkit-text-fill-color:#A64500 !important; margin-right:.25rem; }
+.ops-badge.warn { background:#FFF4D6; color:#8A5600 !important; -webkit-text-fill-color:#8A5600 !important; }
+.ops-badge.danger { background:#FDECEC; color:#B3261E !important; -webkit-text-fill-color:#B3261E !important; }
+.ops-badge.gray { background:#F2F4F6; color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; }
+.ops-item { background:#FFFFFF; border:0; border-radius:16px; padding:.9rem 1rem; margin:.5rem 0; box-shadow:var(--shadow); }
+.ops-item.warn { box-shadow:inset 3px 0 #E5A400,var(--shadow); }
+.ops-item.danger { box-shadow:inset 3px 0 var(--danger),var(--shadow); }
+.review-comment { background:#F7F8FA; border:0; border-radius:12px; padding:.7rem .8rem; margin:.35rem 0; }
+.muted { color:var(--text-3) !important; -webkit-text-fill-color:var(--text-3) !important; font-size:.87rem; }
 .compact p { margin:.15rem 0; }
-div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #E4CCB6; border-radius:14px; padding:.7rem .85rem; }
-[data-testid="stMetricLabel"] *, [data-testid="stMetricDelta"] * { color:#5B493D !important; -webkit-text-fill-color:#5B493D !important; }
-[data-testid="stMetricValue"] * { color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important; }
-/* iPhone/Safari dark mode must never turn action buttons black. */
+
+/* Bible results prioritize the text itself. */
+.bible-result-summary { display:flex; align-items:center; flex-wrap:wrap; gap:.55rem; margin:.2rem 0 1rem; color:var(--text-3); font-size:.78rem; }
+.bible-result-summary span { display:inline-flex; align-items:baseline; gap:.2rem; background:transparent; border:0; padding:0; color:var(--text-3); }
+.bible-result-summary strong { color:var(--text-2); font-size:.82rem; font-weight:800; }
+.bible-verse { padding:.8rem 0 1rem; border-bottom:1px solid var(--line); }
+.bible-verse:last-child { border-bottom:0; }
+.bible-verse .reference { color:var(--text-2); font-size:.84rem; font-weight:800; margin-bottom:.42rem; }
+.bible-verse .content { color:var(--text); font-size:1.05rem; line-height:1.75; letter-spacing:-.012em; }
+
+/* Clear three-level button hierarchy. */
 [data-testid="stMainBlockContainer"] div[data-testid="stButton"] button,
 [data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button,
 [data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button,
@@ -194,141 +237,128 @@ div[data-testid="stMetric"] { background:#FFFFFF !important; border:1px solid #E
 [data-testid="stMainBlockContainer"] .stDownloadButton > button,
 [data-testid="stMainBlockContainer"] .stLinkButton > a {
   -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
-  background-color:#FFFFFF !important; background-image:none !important;
-  color:#753100 !important; -webkit-text-fill-color:#753100 !important;
-  border:2px solid #C45B08 !important; border-radius:10px !important;
-  font-weight:800 !important; opacity:1 !important;
-  box-shadow:0 2px 5px rgba(184,75,0,.20) !important;
+  background:#F2F4F6 !important; background-image:none !important;
+  color:#333D4B !important; -webkit-text-fill-color:#333D4B !important;
+  border:0 !important; border-radius:12px !important; font-weight:750 !important;
+  opacity:1 !important; box-shadow:none !important; transition:background .15s,transform .08s;
 }
 [data-testid="stMainBlockContainer"] div[data-testid="stButton"] button *,
 [data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button *,
 [data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button *,
-[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a *,
-[data-testid="stMainBlockContainer"] .stButton > button *,
-[data-testid="stMainBlockContainer"] .stDownloadButton > button *,
-[data-testid="stMainBlockContainer"] .stLinkButton > a * {
-  color:#753100 !important; -webkit-text-fill-color:#753100 !important; opacity:1 !important;
+[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a * {
+  color:#333D4B !important; -webkit-text-fill-color:#333D4B !important; opacity:1 !important;
 }
-[data-testid="stMainBlockContainer"] button[kind="primary"],
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button[kind="primary"],
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button[kind="primary"],
+[data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button[kind="primary"],
 [data-testid="stMainBlockContainer"] button[data-testid="stBaseButton-primary"] {
-  background-color:#FF8207 !important; color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
+  background:var(--brand) !important; color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
 }
-[data-testid="stMainBlockContainer"] button[kind="primary"] *,
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button[kind="primary"] *,
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button[kind="primary"] *,
+[data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button[kind="primary"] *,
 [data-testid="stMainBlockContainer"] button[data-testid="stBaseButton-primary"] * {
-  color:#2C1F16 !important; -webkit-text-fill-color:#2C1F16 !important;
+  color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
+}
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button[kind="tertiary"],
+[data-testid="stMainBlockContainer"] button[data-testid="stBaseButton-tertiary"] {
+  background:transparent !important; color:var(--text-2) !important;
 }
 [data-testid="stMainBlockContainer"] div[data-testid="stButton"] button:hover,
 [data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button:hover,
 [data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button:hover,
-[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a:hover {
-  background-color:#FFF0DE !important; border-color:#963D00 !important;
-}
-[data-testid="stMainBlockContainer"] button[kind="primary"]:hover,
-[data-testid="stMainBlockContainer"] button[data-testid="stBaseButton-primary"]:hover {
-  background-color:#E96F00 !important;
-}
+[data-testid="stMainBlockContainer"] div[data-testid="stLinkButton"] a:hover { background:#E5E8EB !important; }
+[data-testid="stMainBlockContainer"] div[data-testid="stButton"] button[kind="primary"]:hover,
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button[kind="primary"]:hover,
+[data-testid="stMainBlockContainer"] div[data-testid="stDownloadButton"] button[kind="primary"]:hover,
+[data-testid="stMainBlockContainer"] button[data-testid="stBaseButton-primary"]:hover { background:var(--brand-pressed) !important; }
+[data-testid="stMainBlockContainer"] button:active { transform:scale(.99); }
 [data-testid="stMainBlockContainer"] button:disabled,
 [data-testid="stMainBlockContainer"] button:disabled * {
-  background:#E9E0D8 !important; color:#51443B !important; -webkit-text-fill-color:#51443B !important;
-  border-color:#B9A99B !important; opacity:1 !important;
+  background:#E5E8EB !important; color:var(--text-3) !important; -webkit-text-fill-color:var(--text-3) !important; opacity:1 !important;
 }
+.st-key-dashboard_attendance_summary button { min-height:3.25rem !important; justify-content:flex-start !important; text-align:left !important; padding:.78rem .95rem !important; line-height:1.4 !important; background:#FFFFFF !important; box-shadow:var(--shadow) !important; }
+.st-key-dashboard_attendance_summary button p { text-align:left !important; }
+
+/* Inputs and native Streamlit surfaces. */
 [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
 [data-baseweb="select"] > div, [data-testid="stNumberInput"] input,
 [data-testid="stDateInput"] input {
-  background:#FFFFFF !important; color:#30251D !important; -webkit-text-fill-color:#30251D !important;
-  border-color:#B9A28F !important; caret-color:#30251D !important; opacity:1 !important;
+  background:#FFFFFF !important; color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
+  border-color:#D1D6DB !important; caret-color:var(--text) !important; opacity:1 !important; border-radius:12px !important;
 }
-input::placeholder, textarea::placeholder {
-  color:#786557 !important; -webkit-text-fill-color:#786557 !important; opacity:1 !important;
-}
-[data-baseweb="select"] *, [role="listbox"] *, [role="option"], [data-baseweb="popover"] * {
-  color:#30251D !important; -webkit-text-fill-color:#30251D !important;
-}
-[role="listbox"], [data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="calendar"] {
-  background:#FFFFFF !important; color:#30251D !important;
-}
-[data-testid="stAlert"] { color:#30251D !important; }
-[data-testid="stAlert"] p, [data-testid="stAlert"] div, [data-testid="stAlert"] span {
-  color:#30251D !important; -webkit-text-fill-color:#30251D !important; opacity:1 !important;
-}
-[data-testid="stExpander"] details, [data-testid="stDataFrame"], [data-testid="stForm"] {
-  background:#FFFFFF !important; color:#30251D !important; border-color:#E4CCB6 !important;
-}
-[data-testid="stExpander"] summary, [data-testid="stExpander"] summary * {
-  color:#30251D !important; -webkit-text-fill-color:#30251D !important; opacity:1 !important;
-}
-[data-testid="stForm"] p, [data-testid="stForm"] label, [data-testid="stForm"] span {
-  color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important;
-}
+[data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus,
+[data-testid="stNumberInput"] input:focus, [data-testid="stDateInput"] input:focus { border-color:var(--brand) !important; box-shadow:0 0 0 1px var(--brand) !important; }
+input::placeholder, textarea::placeholder { color:var(--text-3) !important; -webkit-text-fill-color:var(--text-3) !important; opacity:1 !important; }
+[data-baseweb="select"] *, [role="listbox"] *, [role="option"], [data-baseweb="popover"] * { color:var(--text) !important; -webkit-text-fill-color:var(--text) !important; }
+[role="listbox"], [data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="calendar"] { background:#FFFFFF !important; color:var(--text) !important; }
+[data-testid="stAlert"] { color:var(--text) !important; border:0 !important; border-radius:14px !important; }
+[data-testid="stAlert"] p, [data-testid="stAlert"] div, [data-testid="stAlert"] span { color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; opacity:1 !important; }
+[data-testid="stExpander"] details, [data-testid="stDataFrame"], [data-testid="stForm"] { background:#FFFFFF !important; color:var(--text) !important; border-color:var(--line) !important; border-radius:16px !important; }
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary * { color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; opacity:1 !important; }
+[data-testid="stForm"] p, [data-testid="stForm"] label, [data-testid="stForm"] span { color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; }
 [data-testid="stMainBlockContainer"] .stCheckbox label *,
 [data-testid="stMainBlockContainer"] [data-testid="stToggle"] label *,
-[data-testid="stMainBlockContainer"] [role="radiogroup"] label * {
-  color:#3B2E25 !important; -webkit-text-fill-color:#3B2E25 !important; opacity:1 !important;
-}
-.stTabs [data-baseweb="tab-list"] { gap:.25rem; }
-.stTabs [data-baseweb="tab"] { border-radius:10px 10px 0 0; padding:.55rem .8rem; }
-.stTabs [data-baseweb="tab"] *, [role="tab"] { color:#655347 !important; }
-.stTabs [aria-selected="true"] * { color:#963D00 !important; font-weight:700 !important; }
-code, pre { background:#FFF3E7 !important; color:#30251D !important; }
-:focus-visible { outline:3px solid #1769AA !important; outline-offset:2px !important; }
-@media (prefers-color-scheme: dark) {
+[data-testid="stMainBlockContainer"] [role="radiogroup"] label * { color:var(--text-2) !important; -webkit-text-fill-color:var(--text-2) !important; opacity:1 !important; }
+div[data-testid="stMetric"] { background:#FFFFFF !important; border:0; border-radius:16px; padding:.8rem .9rem; box-shadow:var(--shadow); }
+[data-testid="stMetricLabel"] *, [data-testid="stMetricDelta"] * { color:var(--text-3) !important; -webkit-text-fill-color:var(--text-3) !important; }
+[data-testid="stMetricValue"] * { color:var(--text) !important; -webkit-text-fill-color:var(--text) !important; }
+.stTabs [data-baseweb="tab-list"] { gap:.2rem; background:#EDEFF2; border-radius:12px; padding:.2rem; }
+.stTabs [data-baseweb="tab"] { border-radius:9px; padding:.5rem .75rem; border:0; }
+.stTabs [data-baseweb="tab"] *, [role="tab"] { color:var(--text-2) !important; }
+.stTabs [aria-selected="true"] { background:#FFFFFF !important; box-shadow:0 1px 4px rgba(25,31,40,.08); }
+.stTabs [aria-selected="true"] * { color:var(--text) !important; font-weight:800 !important; }
+code, pre { background:#F2F4F6 !important; color:var(--text) !important; }
+hr { border-color:var(--line) !important; }
+:focus-visible { outline:3px solid #1776D2 !important; outline-offset:2px !important; }
+
+@media (prefers-color-scheme:dark) {
   html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"] {
-    background:#FFFDF9 !important; color:#30251D !important; color-scheme:light !important;
+    background:var(--bg) !important; color:var(--text) !important; color-scheme:light !important;
   }
 }
-@media (max-width: 768px) {
-  [data-testid="stSidebar"] {
-    width:min(13.75rem, 56vw) !important;
-    min-width:min(13.75rem, 56vw) !important;
-    max-width:min(13.75rem, 56vw) !important;
-  }
-  [data-testid="stSidebar"] > div:first-child,
-  [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-    width:100% !important;
-  }
-  [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
-    padding:1rem .8rem !important;
-  }
-  [data-testid="stSidebar"] h2 {
-    font-size:.96rem !important;
-    white-space:nowrap;
-  }
-  [data-testid="stSidebar"] [role="radiogroup"] p {
-    font-size:.9rem !important;
-  }
-  .ops-hero { padding:1rem 1.1rem; border-radius:16px; }
-  .ops-hero h1 { font-size:1.42rem; }
-  .ops-hero p { font-size:.88rem; }
-  .ops-card { min-height:86px; padding:.75rem; }
-  .ops-card .value { font-size:1.25rem; }
-  [data-testid="stHorizontalBlock"] { gap:.35rem; }
-  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:44px !important; width:100%; padding:.45rem .2rem !important; display:flex; align-items:center; }
+@media (max-width:768px) {
+  [data-testid="stMainBlockContainer"] { padding:3.2rem 1rem 4rem !important; }
+  [data-testid="stSidebar"] { width:min(11.5rem,48vw) !important; min-width:min(11.5rem,48vw) !important; max-width:min(11.5rem,48vw) !important; }
+  [data-testid="stSidebar"] > div:first-child, [data-testid="stSidebar"] [data-testid="stSidebarContent"] { width:100% !important; }
+  [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding:1rem .65rem 1.5rem !important; }
+  [data-testid="stSidebar"] h2 { font-size:.92rem !important; white-space:nowrap; }
+  [data-testid="stSidebar"] [role="radiogroup"] p { font-size:.86rem !important; }
+  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:42px !important; padding:.42rem .3rem !important; }
+  .ops-hero { padding:.05rem 0 .45rem; margin-bottom:1rem; }
+  .ops-hero h1, .ops-dashboard-head h1 { font-size:1.52rem !important; }
+  .ops-hero p { font-size:.9rem; }
+  .ops-dashboard-head { margin-bottom:1.15rem; }
+  .ops-section-gap { height:2rem; }
+  .ops-card-grid { grid-template-columns:1.15fr .85fr; gap:.5rem; }
+  .ops-card { min-height:104px; padding:.85rem .8rem; border-radius:16px; }
+  .ops-card .value { font-size:1.45rem; }
+  .ops-card.primary .value { font-size:2.1rem; }
+  .ops-card .label { font-size:.8rem; }
+  .ops-card .note { font-size:.72rem; }
+  [data-testid="stHorizontalBlock"] { gap:.4rem; }
   [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
   [data-baseweb="select"] > div, [data-testid="stDateInput"] input,
   [data-testid="stNumberInput"] input { min-height:44px !important; font-size:16px !important; }
-  [data-testid="stMetric"] { min-height:84px !important; }
-  [data-testid="stMainBlockContainer"] button { min-height:44px !important; }
-  h1 { font-size:1.55rem !important; }
-  h2 { font-size:1.3rem !important; }
-  h3 { font-size:1.2rem !important; }
-  .ops-badge { font-size:.82rem !important; }
-  .ops-card .label, .ops-card .note { font-size:.875rem !important; }
+  [data-testid="stMetric"] { min-height:82px !important; }
+  [data-testid="stMainBlockContainer"] button { min-height:46px !important; }
+  h1 { font-size:1.55rem !important; } h2 { font-size:1.28rem !important; } h3 { font-size:1.16rem !important; }
+  .ops-badge { font-size:.79rem !important; }
   .ops-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .review-stat-grid { grid-template-columns:repeat(4,minmax(0,1fr)); gap:.3rem; }
-  .review-stat { min-height:68px; border-radius:10px; padding:.45rem .12rem; }
-  .review-stat .label { font-size:.76rem; }
-  .review-stat .value { font-size:1.15rem; }
-  .compact-stat-grid { gap:.3rem; }
-  .compact-stat { min-height:66px; border-radius:10px; padding:.4rem .12rem; }
-  .compact-stat .label { font-size:.7rem; }
-  .compact-stat .value { font-size:1.03rem; }
+  .review-stat-grid { grid-template-columns:repeat(4,minmax(0,1fr)); gap:.28rem; }
+  .review-stat { min-height:65px; border-radius:12px; padding:.4rem .08rem; }
+  .review-stat .label { font-size:.69rem; }
+  .review-stat .value { font-size:1.08rem; }
+  .compact-stat-grid { gap:.28rem; }
+  .compact-stat { min-height:64px; border-radius:12px; padding:.38rem .08rem; }
+  .compact-stat .label { font-size:.67rem; }
+  .compact-stat .value { font-size:1rem; }
   .st-key-dashboard_quick_menu [data-testid="stHorizontalBlock"] { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:.4rem !important; }
   .st-key-dashboard_quick_menu [data-testid="column"] { width:100% !important; min-width:0 !important; flex:unset !important; }
-  [data-testid="stMainBlockContainer"] { padding-left:1rem !important; padding-right:1rem !important; }
-  .ops-stat .value { font-size:1.2rem; }
   .stTabs [data-baseweb="tab-list"] { overflow-x:auto; scrollbar-width:thin; }
   [data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"] { overflow-wrap:anywhere; }
-  .stButton>button, .stDownloadButton>button, .stLinkButton>a { min-height:3rem; font-size:1rem !important; }
+  .stButton>button, .stDownloadButton>button, .stLinkButton>a { min-height:2.85rem; font-size:.95rem !important; }
+  .bible-verse .content { font-size:1.03rem; line-height:1.72; }
 }
 </style>
 """
@@ -365,11 +395,17 @@ def show_flash() -> None:
         st.success(message)
 
 
-def hero(title: str, subtitle: str) -> None:
+def hero(title: str, subtitle: str, eyebrow: str = "예배 운영") -> None:
     st.markdown(
-        f'<div class="ops-hero"><h1>{html.escape(title)}</h1><p>{html.escape(subtitle)}</p></div>',
+        '<div class="ops-hero">'
+        f'<div class="eyebrow">{html.escape(eyebrow)}</div>'
+        f'<h1>{html.escape(title)}</h1><p>{html.escape(subtitle)}</p></div>',
         unsafe_allow_html=True,
     )
+
+
+def section_gap() -> None:
+    st.markdown('<div class="ops-section-gap" aria-hidden="true"></div>', unsafe_allow_html=True)
 
 
 def compact_stats(metrics: list[tuple[str, object]], columns: int = 4) -> None:
@@ -388,9 +424,13 @@ def compact_stats(metrics: list[tuple[str, object]], columns: int = 4) -> None:
 
 
 def dashboard_header() -> None:
-    today_label = today_kst().strftime("%Y.%m.%d")
+    today = today_kst()
+    weekday = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][today.weekday()]
+    today_label = f"{today.month}월 {today.day}일 {weekday}"
     st.markdown(
-        f'<div class="ops-dashboard-head"><h1>예배 운영 대시보드</h1><span>{today_label} 기준</span></div>',
+        '<div class="ops-dashboard-head">'
+        f'<div class="eyebrow">{today_label}</div>'
+        '<h1>예배 운영</h1></div>',
         unsafe_allow_html=True,
     )
 
@@ -1293,7 +1333,7 @@ def shared_review_board() -> None:
 
 def sidebar() -> str:
     with st.sidebar:
-        st.markdown(f"## ⛪ {APP_TITLE}")
+        st.markdown("## 조이풀교회")
         st.caption("예배 운영 · 지식관리")
         st.markdown("---")
         primary_menu_items = [
@@ -1307,17 +1347,17 @@ def sidebar() -> str:
         ]
         secondary_menu_items = ["매뉴얼", "결정·운영로그", "보관함", "데이터·백업"]
         menu_labels = {
-            "대시보드": "🏠  대시보드",
-            "팀 확인": "✅  팀 확인",
-            "교회력": "📅  교회력",
-            "행사": "🎯  행사",
-            "매뉴얼": "📋  매뉴얼",
-            "결정·운영로그": "📝  결정·운영 기록",
-            "예배 인원 현황": "📊  예배 인원 현황",
-            "성경 검색": "📖  성경 검색",
-            "전체 검색": "🔍  전체 검색",
-            "보관함": "📦  보관함",
-            "데이터·백업": "⚙️  데이터·백업",
+            "대시보드": "대시보드",
+            "팀 확인": "팀 확인",
+            "교회력": "교회력",
+            "행사": "행사",
+            "매뉴얼": "매뉴얼",
+            "결정·운영로그": "결정·운영 기록",
+            "예배 인원 현황": "예배 인원 현황",
+            "성경 검색": "성경 검색",
+            "전체 검색": "전체 검색",
+            "보관함": "보관함",
+            "데이터·백업": "데이터·백업",
         }
         pending_nav = st.session_state.pop("_navigate_to", None)
         if pending_nav in primary_menu_items:
@@ -1338,7 +1378,7 @@ def sidebar() -> str:
         if previous_nav is not None and previous_nav != nav:
             st.session_state.pop("_secondary_nav", None)
         st.session_state["_last_main_nav"] = nav
-        with st.expander("매뉴얼·관리", expanded=st.session_state.get("_secondary_nav") is not None):
+        with st.expander("더 보기", expanded=st.session_state.get("_secondary_nav") is not None):
             if st.session_state.get("_secondary_nav") and st.button(
                 f"← {menu_labels[nav]}로 돌아가기",
                 key="sidebar_return_primary",
@@ -1382,7 +1422,7 @@ def sidebar() -> str:
 
 
 def review_board_page() -> None:
-    hero("팀 확인", "확인할 일을 분류하고 담당·기한·진행 상태를 함께 관리합니다.")
+    hero("팀 확인", "확인할 일과 진행 상황을 한곳에서 나눠 봐요.")
     shared_review_board()
 
 
@@ -1461,12 +1501,13 @@ def review_board_summary() -> None:
         if st.button(
             f"반복 이슈 {open_recurring_count}건 · 확정 기준 {confirmed_standard_count}건 보기",
             key="open_recurring_review_items",
+            type="tertiary",
             width="stretch",
         ):
             st.session_state["review_category_filter"] = "반복 이슈"
             st.session_state["review_status_filter"] = "전체 상태"
             navigate("팀 확인")
-    if st.button("팀 확인 게시판 전체 보기", key="open_full_review_board", width="stretch"):
+    if st.button("게시판 전체 보기", key="open_full_review_board", type="tertiary", width="stretch"):
         navigate("팀 확인")
 
 
@@ -1512,14 +1553,15 @@ def dashboard_page() -> None:
         (today, active_calendar_id, active_calendar_id),
     )
 
-    st.subheader("다음 정기예배")
+    st.markdown('<div class="ops-section-title">다음 정기예배</div>', unsafe_allow_html=True)
     worship_cards = [
         ("주일예배", dday(sunday_date.isoformat()), sunday_date.strftime("%Y.%m.%d · 일요일")),
         ("금요예배", dday(friday_date.isoformat()), friday_date.strftime("%Y.%m.%d · 금요일")),
     ]
     worship_html = '<div class="ops-card-grid">' + "".join(
-        f'<div class="ops-card"><div class="label">{label}</div><div class="value">{value}</div><div class="note">{note}</div></div>'
-        for label, value, note in worship_cards
+        f'<div class="ops-card{" primary" if index == 0 else ""}"><div class="label">{label}</div>'
+        f'<div class="value">{value}</div><div class="note">{note}</div></div>'
+        for index, (label, value, note) in enumerate(worship_cards)
     ) + "</div>"
     st.markdown(worship_html, unsafe_allow_html=True)
 
@@ -1533,8 +1575,8 @@ def dashboard_page() -> None:
         latest_online_label = "송출 없음" if str(latest_attendance["_record_status"]) == "NO_STREAM" else str(latest_online)
         if missing_attendance_dates:
             attendance_label = (
-                f"⚠ 주일 자료 {len(missing_attendance_dates)}회 미확인 · "
-                f"최근 {latest_attendance_date} 현장 {latest_onsite}명 · 온라인 {latest_online_label} · 확인하기"
+                f"주일 자료 {len(missing_attendance_dates)}회 확인이 필요해요 · "
+                f"최근 {latest_attendance_date} 현장 {latest_onsite}명 · 온라인 {latest_online_label}"
             )
         else:
             attendance_label = (
@@ -1542,7 +1584,7 @@ def dashboard_page() -> None:
                 f"온라인 {latest_online_label} · 예배 인원 보기"
             )
     else:
-        attendance_label = "⚠ 집계 완료된 주일예배 자료가 없습니다 · 확인하기"
+        attendance_label = "주일예배 자료를 확인하면 최근 인원이 여기에 보여요"
     with st.container(key="dashboard_attendance_summary"):
         if st.button(attendance_label, key="dashboard_attendance_open", width="stretch"):
             navigate("예배 인원 현황")
@@ -1564,9 +1606,13 @@ def dashboard_page() -> None:
                     current_service = service_label
                 st.markdown(f"- {html.escape(str(assignment['role']))} · {html.escape(str(assignment['name']))}")
     else:
-        st.caption("이번 주 엔지니어 라인업 자료가 아직 없습니다.")
+        st.caption("이번 주 엔지니어 라인업을 업데이트하면 여기에 보여요.")
 
-    st.markdown("#### 자주 쓰는 메뉴")
+    section_gap()
+    review_board_summary()
+
+    section_gap()
+    st.markdown('<div class="ops-section-title">바로가기</div>', unsafe_allow_html=True)
     quick_manual_rows = rows(
         "SELECT id,source_sheet FROM manuals WHERE status='CURRENT' AND archived_at IS NULL "
         "AND source_sheet IN ('주일 세팅 타임테이블','금요집회 세팅 타임테이블','항시 체크 비품')"
@@ -1587,8 +1633,8 @@ def dashboard_page() -> None:
                 else:
                     navigate(target_page)
 
-    st.divider()
-    st.subheader("다가오는 교회력")
+    section_gap()
+    st.markdown('<div class="ops-section-title">다가오는 일정</div>', unsafe_allow_html=True)
     if calendar_items:
         calendar_html = '<div class="ops-list">' + "".join(
             '<div class="ops-list-item">'
@@ -1599,33 +1645,23 @@ def dashboard_page() -> None:
             for item in calendar_items[:3]
         ) + "</div>"
         st.markdown(calendar_html, unsafe_allow_html=True)
-        if st.button("교회력 전체 보기", key="dashboard_open_calendar", width="stretch"):
+        if st.button("교회력 전체 보기", key="dashboard_open_calendar", type="tertiary", width="stretch"):
             navigate("교회력")
     else:
-        calendar_note, calendar_action = st.columns([.78, .22])
-        calendar_note.info("연동된 교회력 일정이 없습니다. Google Calendar를 연결하면 가까운 일정부터 표시됩니다.")
-        if calendar_action.button("캘린더 연결", width="stretch"):
+        st.markdown(
+            '<div class="ops-empty">Google Calendar를 연결하면 가까운 교회력 일정부터 여기에 보여요.</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("캘린더 연결", key="dashboard_connect_calendar", type="tertiary", width="stretch"):
             navigate("교회력")
 
-    st.divider()
-    st.subheader(f"지금 할 일 · {action_count}건")
-    if not action_tasks:
-        st.success("7일 안에 처리할 준비업무가 없습니다.")
-    for task in action_tasks:
-        is_overdue = bool(task["due_date"] and task["due_date"] < today)
-        due_label = f"기한 지남 · {task['due_date']}" if is_overdue else (task["due_date"] or "기한 미정")
-        button_label = f"{task['title']}  ·  {task['event_title']}  ·  {due_label}"
-        if st.button(button_label, key=f"dashboard_task_{task['id']}", width="stretch"):
-            navigate("행사", "selected_event", task["event_id"])
-
-    st.divider()
-    review_board_summary()
-
-    st.divider()
-    st.subheader("다가오는 특별행사")
+    st.markdown("##### 특별행사")
     if not upcoming:
-        st.info("등록된 다음 행사가 없습니다.")
-        if st.button("다음 행사 만들기", type="primary", width="stretch"):
+        st.markdown(
+            '<div class="ops-empty">특별행사를 만들면 준비 일정과 진행 상황이 여기에 보여요.</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("행사 만들기", key="dashboard_create_event", width="stretch"):
             navigate("행사")
     for event in upcoming:
         ready = readiness(event["id"])
@@ -1633,7 +1669,21 @@ def dashboard_page() -> None:
         if st.button(button_label, key=f"dashboard_event_{event['id']}", width="stretch"):
             navigate("행사", "selected_event", event["id"])
 
-    st.divider()
+    section_gap()
+    st.markdown(f'<div class="ops-section-title">지금 할 일 · {action_count}건</div>', unsafe_allow_html=True)
+    if not action_tasks:
+        st.markdown(
+            '<div class="ops-empty">7일 안에 처리할 준비업무를 모두 확인했어요.</div>',
+            unsafe_allow_html=True,
+        )
+    for task in action_tasks:
+        is_overdue = bool(task["due_date"] and task["due_date"] < today)
+        due_label = f"기한 지남 · {task['due_date']}" if is_overdue else (task["due_date"] or "기한 미정")
+        button_label = f"{task['title']}  ·  {task['event_title']}  ·  {due_label}"
+        if st.button(button_label, key=f"dashboard_task_{task['id']}", width="stretch"):
+            navigate("행사", "selected_event", task["event_id"])
+
+    section_gap()
     with st.expander("시스템 자동 점검 보기"):
         alerts = [
             ("기한 지남", f"{overdue_count}건"),
@@ -1875,7 +1925,7 @@ def event_readonly_detail(event_id: int) -> None:
 
 
 def events_page() -> None:
-    hero("행사", "반복되는 특별예배의 준비·기록·회고를 연결합니다.")
+    hero("행사", "특별예배의 준비부터 회고까지 이어서 관리해요.")
     if has_access("TEAM"):
         st.caption("저장 안내 · 행사와 체크리스트 변경은 현재 로컬 DB에 저장됩니다. 영구 DB 이전 전에는 중요한 내용을 별도 보관하세요.")
     list_tab, create_tab, templates_tab = st.tabs(["행사 목록", "새 행사", "체크리스트 템플릿"])
@@ -2030,7 +2080,7 @@ def manual_create_form() -> None:
 
 
 def manuals_page() -> None:
-    hero("매뉴얼", "분류와 검색으로 필요한 준비 내용을 빠르게 찾습니다.")
+    hero("매뉴얼", "필요한 준비 내용과 운영 기준을 빠르게 찾아봐요.", "지식관리")
     if has_access("TEAM"):
         st.caption("저장 안내 · 새 매뉴얼과 개정 내용은 현재 로컬 DB에 저장됩니다. 영구 DB 이전 전에는 중요한 내용을 별도 보관하세요.")
     current, create_tab = st.tabs(["현재 매뉴얼", "새 매뉴얼"])
@@ -2240,7 +2290,7 @@ def manuals_page() -> None:
 
 
 def logs_page() -> None:
-    hero("결정·운영 로그", "무엇을 바꿨는지보다 왜 바꿨는지를 남깁니다.")
+    hero("결정·운영 기록", "언제, 왜 기준을 정했는지 간단하게 남겨요.", "지식관리")
     if not access_required("TEAM", "결정·운영 기록"):
         return
     st.caption("저장 안내 · 이 기록은 현재 로컬 DB에 저장됩니다. 영구 DB 이전 전에는 중요한 내용을 별도 보관하세요.")
@@ -2346,7 +2396,7 @@ def logs_page() -> None:
 
 
 def attendance_page() -> None:
-    hero("예배 인원 현황", "주일 현장 참석을 기준으로 보고, 온라인 지표는 별도로 확인합니다.")
+    hero("예배 인원 현황", "최근 주일예배 현황과 주차별 변화를 먼저 확인해요.")
     data = _attendance_frame()
     if data.empty:
         st.info("예배 인원 데이터가 없습니다.")
@@ -2599,22 +2649,25 @@ def attendance_page() -> None:
 
 
 def bible_page() -> None:
-    hero("성경 검색", "저장된 성경 TXT에서 구절을 찾아 설교용 본문으로 정리합니다.")
+    hero("성경 검색", "구절 번호나 받은 설교 문자를 그대로 넣어 주세요.", "지식관리")
 
     source_text = st.text_area(
-        "성경 구절 또는 설교 문자",
-        height=210,
+        "구절 번호나 받은 문자를 그대로 넣어 주세요",
+        height=150,
         placeholder=(
-            "짧게 검색: 창 1:1 또는 행 7:2~3\n"
-            "붙여 써도 됩니다: 창:1:1\n\n"
-            "또는 받은 문자를 그대로 붙여넣으세요.\n"
-            "[설교 인용 구절]\n"
-            "열왕기상 19장 4절\n마태복음 6장 1절\n시편 103편 14절"
+            "창 1:1 · 행 7:2~3\n\n"
+            "또는 받은 설교 문자를 그대로 붙여넣으세요."
         ),
         key="bible_source_text",
         help="창 1:1, 창:1:1, 창세기 1:1, 창세기 1장 1절, 행 7:2~3 형식을 모두 인식합니다.",
     )
-    submitted = st.button("구절 찾기", type="primary", width="stretch")
+    previous_result = st.session_state.get("bible_lookup_result")
+    has_current_result = bool(previous_result and source_text == previous_result.get("source"))
+    submitted = st.button(
+        "다시 찾기" if has_current_result else "구절 찾기",
+        type="secondary" if has_current_result else "primary",
+        width="stretch",
+    )
 
     bible_label = "저장된 성경 TXT"
     local_bible: LocalBible | None = None
@@ -2625,8 +2678,8 @@ def bible_page() -> None:
         except (OSError, ValueError) as exc:
             st.warning(f"저장된 성경 전체 본문을 읽지 못했습니다: {exc}")
 
-    with st.expander("관리자 · 성경 원본 교체"):
-        st.caption("기본 저장된 성경 대신 다른 전체 본문을 이번 접속에서만 사용할 때 선택합니다.")
+    with st.expander("설정 · 성경 원본 교체"):
+        st.caption("다른 전체 본문을 이번 접속에서만 사용하고 싶을 때 선택해요.")
         local_source = st.file_uploader(
             "다른 성경 전체 본문 TXT",
             type=["txt"],
@@ -2653,7 +2706,7 @@ def bible_page() -> None:
     if local_bible is not None:
         st.caption(f"{bible_label} · {local_bible.book_count}권 {len(local_bible.verses):,}절 연결됨")
     else:
-        st.warning("성경 전체 본문 TXT가 없습니다. 관리자 항목에서 파일을 연결해 주세요.")
+        st.warning("성경 전체 본문 TXT를 연결하면 구절 내용을 함께 볼 수 있어요.")
 
     if submitted:
         all_references = extract_bible_references(source_text, limit=101)
@@ -2708,7 +2761,7 @@ def bible_page() -> None:
     )
     if result.get("omitted_count"):
         st.warning("한 번에 최대 100개 구절까지 처리합니다. 100개 이후 구절은 파일을 나누어 다시 확인해 주세요.")
-    st.subheader("찾은 성경 본문")
+    st.subheader("찾은 본문")
     if local_bible is None:
         st.info("구절 표기는 정상적으로 찾았습니다. 성경 전체 본문 TXT를 연결하면 본문이 표시됩니다.")
 
@@ -2718,11 +2771,9 @@ def bible_page() -> None:
         verse = verse_by_id.get(reference.verse_id)
         if verse:
             st.markdown(
-                f'<div style="background:#FFFAF4;border:1.5px solid #E8CFA8;border-left:5px solid #FF8207;'
-                f'border-radius:14px;padding:.85rem 1rem .8rem;margin:.4rem 0;">'
-                f'<div style="color:#8B4A00;font-size:.8rem;font-weight:700;margin-bottom:.35rem;letter-spacing:.02em;">'
-                f'{html.escape(reference.display)}</div>'
-                f'<div style="color:#2C1F16;font-size:1.05rem;line-height:1.7;">{html.escape(verse.content)}</div>'
+                '<div class="bible-verse">'
+                f'<div class="reference">{html.escape(reference.display)}</div>'
+                f'<div class="content">{html.escape(verse.content)}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -2735,18 +2786,21 @@ def bible_page() -> None:
                     st.caption("본문 연결 대기")
 
     if verses:
-        st.subheader("한 번에 복사")
-        st.text_area(
-            "정리된 성경 본문",
+        section_gap()
+        st.subheader("정리본 복사하기")
+        st.caption("아래 상자의 복사 아이콘을 누르면 전체 본문을 한 번에 복사할 수 있어요.")
+        st.code(
+            st.session_state["bible_copy_output"],
+            language=None,
+            wrap_lines=True,
             height=min(420, 120 + len(verses) * 62),
-            key="bible_copy_output",
-            help="내용을 길게 눌러 전체 선택 후 복사할 수 있습니다.",
         )
         st.download_button(
-            "정리본 내려받기",
+            "정리본 파일로 내려받기",
             st.session_state["bible_copy_output"].encode("utf-8-sig"),
             file_name="성경_본문_정리.txt",
             mime="text/plain",
+            type="primary",
             width="stretch",
         )
 
@@ -2764,7 +2818,7 @@ def bible_page() -> None:
 
 
 def search_page() -> None:
-    hero("전체 검색", "준비업무와 매뉴얼 내용을 검색하고 상세 화면으로 바로 이동합니다.")
+    hero("전체 검색", "준비업무와 매뉴얼을 함께 찾아 바로 열어 봐요.", "지식관리")
     term = st.text_input("검색어", value=st.session_state.get("search_term", ""), placeholder="예: 세례, 방석, 마이크")
     include_archived = st.checkbox("보관·이전 버전도 포함", value=False)
     if not term.strip():
@@ -2804,7 +2858,7 @@ def search_page() -> None:
 
 
 def archive_page() -> None:
-    hero("보관함", "삭제 대신 보관하고, 필요할 때 다시 현재 자료로 복원합니다.")
+    hero("보관함", "보관한 자료를 확인하고 필요할 때 다시 복원해요.", "관리")
     if not access_required("ADMIN", "보관 자료 복원"):
         return
     events = rows("SELECT id,title,event_date,archived_at FROM events WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
@@ -2831,7 +2885,7 @@ def archive_page() -> None:
 
 
 def calendar_page() -> None:
-    hero("교회력", "Google Calendar의 교회 일정을 읽기 전용으로 동기화해 대시보드에 표시합니다.")
+    hero("교회력", "Google Calendar 일정을 읽기 전용으로 가져와 함께 확인해요.")
     today = today_kst().isoformat()
     active_calendar_id = get_app_meta("last_google_calendar_id", "") or get_app_meta("google_calendar_id", "")
     upcoming = rows(
@@ -2925,7 +2979,7 @@ def calendar_page() -> None:
 
 
 def data_page() -> None:
-    hero("데이터·백업", "원본 가져오기부터 형식 확인·정리·저장 상태까지 확인합니다.")
+    hero("데이터·백업", "원본 연결과 백업 상태를 관리자용으로 확인해요.", "관리자")
     if not access_required("ADMIN", "원본 동기화·데이터 내보내기·DB 관리"):
         return
     st.subheader("Google Sheets 원본")
