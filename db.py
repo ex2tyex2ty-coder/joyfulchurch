@@ -1217,6 +1217,16 @@ def global_search(term: str, include_archived: bool = False, path: Path | str = 
     return sorted(results, key=lambda item: (item["archived"], priority.get(item["kind"], 9), item.get("item_date") or ""), reverse=False)
 
 
+def _csv_safe_cell(value: Any) -> Any:
+    """Keep spreadsheet applications from interpreting exported text as formulas."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.lstrip()
+    if stripped.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + value
+    return value
+
+
 def export_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> tuple[Path, dict[str, str]]:
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = now_kst().strftime("%Y%m%d_%H%M%S")
@@ -1235,7 +1245,10 @@ def export_backup(path: Path | str = DB_PATH, backup_dir: Path = BACKUP_DIR) -> 
             if items:
                 writer = csv.DictWriter(buffer, fieldnames=items[0].keys())
                 writer.writeheader()
-                writer.writerows(items)
+                writer.writerows(
+                    {key: _csv_safe_cell(item[key]) for key in item.keys()}
+                    for item in items
+                )
             csv_payloads[table] = buffer.getvalue()
     json_path = backup_dir / f"joyful_worship_ops_{stamp}.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

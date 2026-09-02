@@ -2,9 +2,19 @@ JOYFUL WORSHIP OPS — GitHub 업로드 안내
 
 1. GitHub의 ex2tyex2ty-coder/joyfulchurch 저장소를 엽니다.
 2. 상단 Add file → Upload files를 누릅니다.
-3. 이 폴더 안의 파일과 .streamlit, data 폴더를 모두 끌어다 놓습니다.
-4. 화면 아래 Commit changes를 누릅니다.
-5. Streamlit Cloud에서 자동 재배포가 시작되면 완료될 때까지 기다립니다.
+3. 이번 r26 배포에서는 아래 파일을 같은 위치에 덮어씁니다.
+   - app.py
+   - config.py
+   - db.py
+   - google_sheets_sync.py
+   - .gitignore
+   - README.md
+   - 업로드 안내.txt
+   - tests/test_r26_ui_security.py
+4. .streamlit/config.toml은 반드시 저장소의 `.streamlit` 폴더 안에 있어야 합니다.
+   저장소 최상위의 config.toml은 Streamlit 테마 설정으로 사용되지 않습니다.
+5. 화면 아래 Commit changes를 누릅니다.
+6. Streamlit Cloud에서 자동 재배포가 시작되면 완료될 때까지 기다립니다.
 
 Streamlit 배포 설정
 - Repository: ex2tyex2ty-coder/joyfulchurch
@@ -13,8 +23,16 @@ Streamlit 배포 설정
 - App URL: https://joyfulchurch.streamlit.app/
 
 중요
-- data 폴더의 joyful_worship_ops.db는 앱 초기 데이터를 담고 있으므로 함께 올립니다.
-- 2026.08.13-r20 예배 인원 구조 변경 시 app.py, db.py, migration.py, config.py와 data/joyful_worship_ops.db를 반드시 같은 배포에서 함께 올립니다.
+- 현재 공개 저장소에 올라간 data/joyful_worship_ops.db와 data/import_report.json은 먼저 GitHub에서 삭제하고 Commit합니다. r26은 DB가 없으면 읽기 전용 Google Sheets로 첫 DB를 자동 구성합니다.
+- 이번 r26에서는 DB 구조를 바꾸지 않습니다. data/joyful_worship_ops.db와 data/import_report.json은 개인정보·운영 기록이 포함될 수 있으므로 공개 GitHub에 절대 올리지 않습니다.
+- 운영 중 생성된 DB를 공개 GitHub에 다시 올리지 마세요. 저장소를 비공개로 바꾸고 영구 DB로 이전하는 것이 다음 단계입니다.
 - 원본 엑셀, 백업, Google 인증 JSON과 토큰은 이 폴더에 포함하지 않았습니다.
+- 실행 중 자동 생성되는 *.db, *.db-wal, *.db-shm, import_report*.json, __pycache__ 파일은 업로드하지 않습니다. .gitignore에도 차단 규칙이 들어 있습니다.
+- .streamlit/secrets.toml, 서비스 계정 JSON, private key, 접근번호는 GitHub에 절대 올리지 않고 Streamlit Cloud의 Secrets 화면에서만 설정합니다.
+- bible_text.txt도 공개 저장소에 있으면 누구나 내려받을 수 있습니다. 내부 전용으로 쓰려면 저장소를 비공개로 바꾸거나 성경 원본을 비공개 저장소로 옮겨야 합니다.
+- 채팅에 한 번이라도 붙여넣은 서비스 계정 private key는 Google Cloud에서 폐기하고 새 키로 Streamlit Secret을 교체합니다.
 - Streamlit Secrets는 GitHub에 올리지 마세요. 이미 설정한 게시판 Secret은 Streamlit Cloud에 유지됩니다.
+- Streamlit Secrets에 TEAM_ACCESS_PIN = "팀원 접근번호"를 추가합니다.
+- Streamlit Secrets에 ADMIN_ACCESS_PIN = "관리자 접근번호"를 추가합니다.
+- 이전 REVIEW_BOARD_DELETE_PIN은 관리자 전체 권한으로 사용하지 않습니다. ADMIN_ACCESS_PIN을 별도로 설정합니다.
 - 이 안내 파일은 앱 실행에 필요하지 않지만 함께 올려도 안전합니다.

@@ -20,16 +20,18 @@ GOOGLE_SHEETS = (
         "label": "예배팀 매뉴얼",
         "spreadsheet_id": "1gpcKvCpnteuxDTmswYfqC2v_IW129693bfPIfxQoXxk",
         "file_name": "2025 예배팀 매뉴얼.xlsx",
+        "expected_role": "MANUALS",
     },
     {
         "label": "예배인원·엔지니어 라인업",
         "spreadsheet_id": "1KyRr5kfrG7BcADeu4mVQrTiq09HZUaC60RzS7Be_WhE",
         "file_name": "2025 예배팀 엔지니어 라인업.xlsx",
+        "expected_role": "LINEUP_ATTENDANCE",
     },
 )
 
 APP_TITLE = "JOYFUL WORSHIP OPS"
-APP_VERSION = "2026.08.31-r25"
+APP_VERSION = "2026.09.02-r26"
 
 STATUS_CURRENT = "CURRENT"
 STATUS_ARCHIVED = "ARCHIVED"

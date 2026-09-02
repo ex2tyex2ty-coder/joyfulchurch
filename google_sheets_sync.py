@@ -72,6 +72,18 @@ def _validate_workbook(path: Path) -> dict[str, Any]:
         workbook.close()
 
 
+def _verify_expected_role(sheet: dict[str, Any], details: dict[str, Any]) -> None:
+    expected_role = str(sheet.get("expected_role") or "").strip()
+    actual_role = str(details.get("role") or "UNKNOWN").strip()
+    if not expected_role or actual_role != expected_role:
+        label = str(sheet.get("label") or sheet.get("file_name") or "Google Sheets 자료")
+        raise RuntimeError(
+            f"{label}의 시트 구성이 예상과 다릅니다. "
+            f"예상 {expected_role or '역할 미설정'}, 확인 {actual_role}. "
+            "연결한 Google Sheets 링크와 시트 이름을 확인하세요."
+        )
+
+
 def _publish_clean_cache(staging_dir: Path) -> tuple[Path, bool]:
     """Swap in a validated cache and retain the previous cache until commit."""
     cache_dir = GOOGLE_SHEETS_CACHE_DIR
@@ -136,6 +148,7 @@ def sync_google_sheets(
             staged_path = staging_dir / sheet["file_name"]
             _download_xlsx(sheet["spreadsheet_id"], staged_path, service_account_info=service_account_info)
             details = _validate_workbook(staged_path)
+            _verify_expected_role(sheet, details)
             downloaded.append({"label": sheet["label"], "file": sheet["file_name"], **details})
 
         # Migrate only this clean, validated snapshot. The previous cache remains
