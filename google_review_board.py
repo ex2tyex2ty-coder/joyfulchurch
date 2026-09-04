@@ -30,6 +30,7 @@ BACKUP_SCHEMA_VERSION = 1
 VALID_STATUSES = {"REVIEW_REQUIRED", "IN_PROGRESS", "CONFIRMED"}
 STATUS_ORDER = {"REVIEW_REQUIRED": 0, "IN_PROGRESS": 1, "CONFIRMED": 2}
 VALID_PRIORITIES = {"NORMAL", "HIGH", "URGENT"}
+RESOLUTION_COMMENT_PREFIX = "[해결 기록]"
 
 
 class ReviewBoardConnectionError(RuntimeError):
@@ -81,11 +82,16 @@ def build_snapshot(
             continue
         grouped_comments[item_id].append(comment)
         status = str(comment.get("status_change", ""))
-        if status in VALID_STATUSES:
+        item_updated_at = str(active_items[item_id].get("updated_at", ""))
+        comment_created_at = str(comment.get("created_at", ""))
+        if status in VALID_STATUSES and (
+            not item_updated_at
+            or (comment_created_at and comment_created_at >= item_updated_at)
+        ):
             active_items[item_id]["status"] = status
             active_items[item_id]["updated_by"] = comment.get("author", "")
-            active_items[item_id]["updated_at"] = comment.get("created_at", "")
-            active_items[item_id]["confirmed_at"] = comment.get("created_at", "") if status == "CONFIRMED" else ""
+            active_items[item_id]["updated_at"] = comment_created_at
+            active_items[item_id]["confirmed_at"] = comment_created_at if status == "CONFIRMED" else ""
 
     counts = {status: 0 for status in VALID_STATUSES}
     for item in active_items.values():
@@ -126,6 +132,32 @@ def build_snapshot(
         "raw_items": items,
         "raw_comments": comments,
     }
+
+
+def find_resolution_comments(
+    comments: list[dict[str, Any]],
+    month_prefix: str = "",
+) -> list[dict[str, Any]]:
+    """Return unique, durable resolve records, optionally for one YYYY-MM month."""
+    resolved: list[dict[str, Any]] = []
+    seen_comment_ids: set[str] = set()
+    for comment in comments:
+        body = str(comment.get("body") or "")
+        created_at = str(comment.get("created_at") or "")
+        if not body.startswith(RESOLUTION_COMMENT_PREFIX):
+            continue
+        if str(comment.get("status_change") or "") != "CONFIRMED":
+            continue
+        if str(comment.get("archived_at") or "").strip():
+            continue
+        if month_prefix and not created_at.startswith(month_prefix):
+            continue
+        comment_id = str(comment.get("comment_id") or "").strip()
+        if not comment_id or comment_id in seen_comment_ids:
+            continue
+        seen_comment_ids.add(comment_id)
+        resolved.append(dict(comment))
+    return resolved
 
 
 def _find_item_row(item_values: list[list[Any]], review_item_id: str) -> int | None:
@@ -396,6 +428,24 @@ class GoogleReviewBoardStore:
         status_change: str | None = None,
         parent_comment_id: str | None = None,
     ) -> str:
+        """Add a comment while serializing the read-check-write sequence."""
+        with self._lock:
+            return self._add_comment(
+                review_item_id,
+                author,
+                body,
+                status_change,
+                parent_comment_id,
+            )
+
+    def _add_comment(
+        self,
+        review_item_id: str,
+        author: str,
+        body: str,
+        status_change: str | None = None,
+        parent_comment_id: str | None = None,
+    ) -> str:
         author = author.strip()
         body = body.strip()
         if not author or not body:
@@ -538,6 +588,126 @@ class GoogleReviewBoardStore:
                 # invite a second destructive-looking request.
                 pass
 
+    def resolve_and_archive_item(
+        self,
+        review_item_id: str,
+        author: str,
+        note: str = "",
+    ) -> None:
+        """Mark an item resolved and soft-archive it in one Sheets update."""
+        review_item_id = str(review_item_id).strip()
+        author = author.strip()
+        note = note.strip()
+        if not review_item_id or not author:
+            raise ValueError("해결할 확인사항과 해결한 사람의 이름을 확인하세요.")
+
+        with self._lock:
+            item_values, comment_values = self._raw_values()
+            snapshot = build_snapshot(item_values, comment_values, show_confirmed=True, limit=1_000_000)
+            item = next(
+                (value for value in snapshot["items"] if str(value["id"]) == review_item_id),
+                None,
+            )
+            if item is None:
+                archived_item = next(
+                    (
+                        value
+                        for value in snapshot["raw_items"]
+                        if str(value.get("item_id", "")) == review_item_id
+                        and str(value.get("archived_at", "")).strip()
+                    ),
+                    None,
+                )
+                if archived_item is not None:
+                    return
+                raise ValueError("해결할 확인사항을 찾을 수 없습니다.")
+
+            item_row = _find_item_row(item_values, review_item_id)
+            if item_row is None:
+                raise ValueError("해결할 확인사항의 원본 행을 찾을 수 없습니다.")
+
+            before_status = str(item.get("status") or "REVIEW_REQUIRED")
+            item_comments = snapshot["comments"].get(review_item_id, [])
+            existing_resolution = next(
+                (
+                    comment
+                    for comment in reversed(item_comments)
+                    if str(comment.get("body") or "").startswith(RESOLUTION_COMMENT_PREFIX)
+                    and str(comment.get("status_change") or "") == "CONFIRMED"
+                ),
+                None,
+            )
+            latest_comment = item_comments[-1] if item_comments else None
+            reuse_existing_resolution = bool(
+                existing_resolution is not None
+                and latest_comment is existing_resolution
+                and before_status == "CONFIRMED"
+            )
+            if reuse_existing_resolution:
+                resolved_at = str(existing_resolution.get("created_at") or _now())
+                resolved_by = str(existing_resolution.get("author") or author)[:80]
+                resolution_body = str(existing_resolution.get("body") or RESOLUTION_COMMENT_PREFIX)
+            else:
+                resolved_at = _now()
+                resolved_by = author[:80]
+                resolution_body = RESOLUTION_COMMENT_PREFIX + (
+                    f"\n{note[:3900]}" if note else "\n해결하고 보관했습니다."
+                )
+                self._append(
+                    COMMENT_SHEET,
+                    [
+                        uuid.uuid4().hex,
+                        review_item_id,
+                        "",
+                        resolved_by,
+                        resolution_body,
+                        "CONFIRMED",
+                        resolved_at,
+                        "",
+                    ],
+                )
+            self._execute(
+                self.service.spreadsheets().values().batchUpdate(
+                    spreadsheetId=self.spreadsheet_id,
+                    body={
+                        "valueInputOption": "RAW",
+                        "data": [
+                            {
+                                "range": f"'{ITEM_SHEET}'!D{item_row}",
+                                "values": [["CONFIRMED"]],
+                            },
+                            {
+                                "range": f"'{ITEM_SHEET}'!F{item_row}:J{item_row}",
+                                "values": [[
+                                    resolved_by,
+                                    item.get("created_at", ""),
+                                    resolved_at,
+                                    resolved_at,
+                                    resolved_at,
+                                ]],
+                            },
+                        ],
+                    },
+                )
+            )
+            try:
+                self._audit(
+                    "review_item",
+                    review_item_id,
+                    "RESOLVE_ARCHIVE",
+                    resolved_by,
+                    before_status=before_status,
+                    after_status="ARCHIVED",
+                    details=(
+                        resolution_body.removeprefix(RESOLUTION_COMMENT_PREFIX).strip()
+                        or str(item.get("title", ""))
+                    )[:500],
+                )
+            except ReviewBoardConnectionError:
+                # The item row is authoritative. Audit failure must not make a
+                # successful resolve action appear unfinished and invite a retry.
+                pass
+
     def restore_item(self, review_item_id: str, author: str) -> None:
         """Restore a soft-archived board item without changing its comments."""
         review_item_id = str(review_item_id).strip()
@@ -575,12 +745,16 @@ class GoogleReviewBoardStore:
                         "valueInputOption": "RAW",
                         "data": [
                             {
+                                "range": f"'{ITEM_SHEET}'!D{item_row}",
+                                "values": [["REVIEW_REQUIRED"]],
+                            },
+                            {
                                 "range": f"'{ITEM_SHEET}'!F{item_row}:J{item_row}",
                                 "values": [[
                                     author[:80],
                                     item.get("created_at", ""),
                                     restored_at,
-                                    item.get("confirmed_at", ""),
+                                    "",
                                     "",
                                 ]],
                             }
@@ -595,7 +769,7 @@ class GoogleReviewBoardStore:
                     "RESTORE",
                     author[:80],
                     before_status="ARCHIVED",
-                    after_status=str(item.get("status", "CONFIRMED")),
+                    after_status="REVIEW_REQUIRED",
                     details=str(item.get("title", ""))[:500],
                 )
             except ReviewBoardConnectionError:

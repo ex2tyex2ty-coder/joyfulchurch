@@ -42,7 +42,13 @@ from bible_lookup import (
     parse_local_bible,
 )
 from google_sheets_sync import sync_google_sheets
-from google_review_board import GoogleReviewBoardStore, ReviewBoardConnectionError, filter_review_items
+from google_review_board import (
+    RESOLUTION_COMMENT_PREFIX,
+    GoogleReviewBoardStore,
+    ReviewBoardConnectionError,
+    find_resolution_comments,
+    filter_review_items,
+)
 from db import (
     add_review_comment,
     add_decision,
@@ -463,7 +469,7 @@ def plain_text(value: object) -> None:
 
 def _has_reserved_review_prefix(value: object) -> bool:
     text = str(value or "").lstrip()
-    return text.startswith(("[기준 확정]", "[또 발생]"))
+    return text.startswith(("[기준 확정]", "[또 발생]", RESOLUTION_COMMENT_PREFIX))
 
 
 def _unique_option_map(options: list[tuple[str, object]]) -> dict[str, object]:
@@ -1022,6 +1028,38 @@ def review_reply_dialog(
                     st.error(str(exc))
 
 
+@st.dialog("확인사항 해결")
+def review_resolve_dialog(
+    store: GoogleReviewBoardStore,
+    item: dict[str, object],
+) -> None:
+    st.markdown(f"**{item['title']}**")
+    st.caption("해결로 기록한 뒤 현재 목록에서 보관함으로 옮겨요.")
+    with st.form(f"review_resolve_dialog_{item['id']}", clear_on_submit=True):
+        resolved_by = st.text_input(
+            "해결한 사람",
+            value=st.session_state.get("operator_name", ""),
+            placeholder="이름",
+        )
+        resolution_note = st.text_input(
+            "해결 메모 · 선택",
+            placeholder="예: 냉방 시작 시간을 30분 앞당김",
+        )
+        if st.form_submit_button("해결하고 보관", type="primary", width="stretch"):
+            try:
+                store.resolve_and_archive_item(
+                    str(item["id"]),
+                    resolved_by,
+                    resolution_note,
+                )
+                _cached_review_board_snapshot.clear()
+                if st.session_state.get("expanded_review_item") == str(item["id"]):
+                    st.session_state.pop("expanded_review_item", None)
+                rerun("해결 기록을 남기고 보관함으로 옮겼어요.")
+            except (ValueError, ReviewBoardConnectionError) as exc:
+                st.error(str(exc))
+
+
 @st.dialog("반복 이슈 기록")
 def recurring_issue_create_dialog(store: GoogleReviewBoardStore) -> None:
     st.caption("제목만 적어도 등록됩니다. 담당자·기한 같은 세부 설정은 필요할 때만 일반 확인사항에서 사용하세요.")
@@ -1120,6 +1158,11 @@ def shared_review_board() -> None:
 
     counts = {status: int(snapshot["counts"].get(status, 0)) for status in REVIEW_STATUS_LABELS}
     active_count = counts["REVIEW_REQUIRED"] + counts["IN_PROGRESS"]
+    current_month = today_kst().strftime("%Y-%m")
+    resolution_comments = find_resolution_comments(snapshot.get("raw_comments", []))
+    resolved_this_month = len(
+        find_resolution_comments(snapshot.get("raw_comments", []), current_month)
+    )
     overdue_count = sum(
         1 for item in snapshot["items"]
         if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < today_kst().isoformat()
@@ -1141,7 +1184,7 @@ def shared_review_board() -> None:
         ("확인 필요", counts["REVIEW_REQUIRED"]),
         ("진행중", counts["IN_PROGRESS"]),
         ("기한 지남", overdue_count),
-        ("확인 완료", counts["CONFIRMED"]),
+        ("이번 달 해결", resolved_this_month),
     ]
     st.markdown(
         '<div class="review-stat-grid">'
@@ -1162,13 +1205,59 @@ def shared_review_board() -> None:
             st.caption("방금 새로고침했어요. 잠시 뒤 다시 확인해 주세요.")
     if counts["CONFIRMED"]:
         if st.button(
-            f"확인 완료 {counts['CONFIRMED']}건 보기 · 보관 관리",
+            f"확인 완료 {counts['CONFIRMED']}건 정리하기",
             key="show_confirmed_review_items",
             type="secondary",
             width="stretch",
         ):
             st.session_state["review_status_filter"] = "확인 완료"
             st.rerun()
+
+    if has_access("TEAM") and resolution_comments:
+        raw_item_by_id = {
+            str(item.get("item_id") or ""): item
+            for item in snapshot.get("raw_items", [])
+        }
+        with st.expander(f"해결 기록 찾아보기 · 이번 달 {resolved_this_month}건", expanded=False):
+            resolution_term = st.text_input(
+                "해결 기록 검색",
+                placeholder="제목, 담당자, 해결 메모를 입력하세요",
+                key="review_resolution_search",
+            ).strip().casefold()
+            matching_resolutions: list[tuple[dict[str, object], dict[str, object]]] = []
+            for comment in resolution_comments:
+                item = raw_item_by_id.get(str(comment.get("review_item_id") or ""), {})
+                resolution_note = str(comment.get("body") or "").removeprefix(RESOLUTION_COMMENT_PREFIX).strip()
+                searchable = " ".join(
+                    str(value or "")
+                    for value in (
+                        item.get("title"),
+                        item.get("description"),
+                        item.get("category"),
+                        item.get("owner"),
+                        comment.get("author"),
+                        resolution_note,
+                    )
+                ).casefold()
+                if resolution_term and resolution_term not in searchable:
+                    continue
+                matching_resolutions.append((comment, item))
+            matching_resolutions.sort(
+                key=lambda pair: str(pair[0].get("created_at") or ""),
+                reverse=True,
+            )
+            if not matching_resolutions:
+                empty_state("검색어와 맞는 해결 기록이 없어요.")
+            for comment, item in matching_resolutions[:20]:
+                resolution_note = str(comment.get("body") or "").removeprefix(RESOLUTION_COMMENT_PREFIX).strip()
+                with st.container(border=True):
+                    st.markdown(f"**{html.escape(str(item.get('title') or '제목 없음'))}**")
+                    st.caption(
+                        f"{str(comment.get('created_at') or '')[:10]} · 해결 {comment.get('author') or '이름 없음'}"
+                        + (f" · {item.get('category')}" if item.get("category") else "")
+                    )
+                    if resolution_note and resolution_note != "해결하고 보관했습니다.":
+                        plain_text(resolution_note)
 
     issue_col, standard_col = st.columns(2)
     if issue_col.button(
@@ -1311,6 +1400,12 @@ def shared_review_board() -> None:
                     elif comment_body.startswith("[기준 확정]"):
                         standard_note = comment_body.removeprefix("[기준 확정]").strip()
                         st.markdown(f"{badge('기준 확정')} {html.escape(standard_note)}", unsafe_allow_html=True)
+                    elif comment_body.startswith(RESOLUTION_COMMENT_PREFIX):
+                        resolution_note = comment_body.removeprefix(RESOLUTION_COMMENT_PREFIX).strip()
+                        st.markdown(
+                            f"{badge('해결')} {html.escape(resolution_note or '해결하고 보관했습니다.')}",
+                            unsafe_allow_html=True,
+                        )
                     else:
                         plain_text(comment_body)
 
@@ -1330,63 +1425,32 @@ def shared_review_board() -> None:
                     width="stretch",
                 ):
                     recurring_issue_standard_dialog(store, item)
-            if st.button(
-                "의견·댓글 남기기" if is_recurring_issue else "댓글·진행 상태 남기기",
-                key=f"open_review_reply_{item['id']}",
-                type="secondary" if is_recurring_issue else "primary",
-                width="stretch",
-            ):
+            if has_access("TEAM"):
+                reply_col, resolve_col = st.columns([2, 1])
+                open_reply = reply_col.button(
+                    "의견·댓글" if is_recurring_issue else "댓글·진행 상태",
+                    key=f"open_review_reply_{item['id']}",
+                    type="secondary",
+                    width="stretch",
+                )
+                open_resolve = resolve_col.button(
+                    "해결",
+                    key=f"open_review_resolve_{item['id']}",
+                    type="primary",
+                    width="stretch",
+                )
+            else:
+                open_reply = st.button(
+                    "의견·댓글 남기기" if is_recurring_issue else "댓글·진행 상태 남기기",
+                    key=f"open_review_reply_{item['id']}",
+                    type="secondary" if is_recurring_issue else "primary",
+                    width="stretch",
+                )
+                open_resolve = False
+            if open_reply:
                 review_reply_dialog(store, item, comments)
-
-            if item["status"] == "CONFIRMED" and has_access("ADMIN"):
-                delete_target_key = "review_item_delete_target"
-                if st.session_state.get(delete_target_key) != str(item["id"]):
-                    if st.button(
-                        "보관",
-                        key=f"open_review_delete_{item['id']}",
-                        type="secondary",
-                        width="stretch",
-                    ):
-                        st.session_state[delete_target_key] = str(item["id"])
-                        st.rerun()
-                else:
-                    with st.form(f"review_delete_{item['id']}", border=True):
-                        st.warning(
-                            "이 확인사항을 현재 목록에서 보관합니다. 게시글·댓글·변경이력은 "
-                            "실수 복구와 백업을 위해 Google Sheets에 보존됩니다."
-                        )
-                        st.write(f"보관 대상: **{item['title']}** · 댓글 {item['comment_count']}개")
-                        delete_author = st.text_input(
-                            "보관한 사람",
-                            value=st.session_state.get("operator_name", ""),
-                            placeholder="이름",
-                            key=f"review_delete_author_{item['id']}",
-                        )
-                        delete_confirmed = st.checkbox(
-                            "확인 완료된 이 항목을 현재 목록에서 보관합니다.",
-                            key=f"review_delete_confirmed_{item['id']}",
-                        )
-                        cancel_col, confirm_col = st.columns(2)
-                        cancel_delete = cancel_col.form_submit_button("취소", width="stretch")
-                        confirm_delete = confirm_col.form_submit_button(
-                            "보관 확정",
-                            type="primary",
-                            width="stretch",
-                            disabled=not delete_confirmed,
-                        )
-                        if cancel_delete:
-                            st.session_state.pop(delete_target_key, None)
-                            st.rerun()
-                        if confirm_delete:
-                            try:
-                                store.archive_item(str(item["id"]), delete_author)
-                                _cached_review_board_snapshot.clear()
-                                st.session_state.pop(delete_target_key, None)
-                                if st.session_state.get("expanded_review_item") == str(item["id"]):
-                                    st.session_state.pop("expanded_review_item", None)
-                                rerun("확인사항을 보관했습니다. 기록은 Google Sheets에 안전하게 보존됩니다.")
-                            except (ValueError, ReviewBoardConnectionError) as exc:
-                                st.error(str(exc))
+            if open_resolve:
+                review_resolve_dialog(store, item)
 
     section_gap()
     st.caption("누구나 새 확인사항과 댓글을 남길 수 있어요. 작성자 이름을 함께 적어 주세요.")
@@ -1476,7 +1540,7 @@ def shared_review_board() -> None:
                 if str(item.get("archived_at") or "").strip()
             ]
             if archived_items:
-                st.markdown("**보관한 확인사항 복원**")
+                st.markdown("**보관한 확인사항 다시 열기**")
                 restore_map = _unique_option_map([
                     (
                         f"{item.get('title') or '제목 없음'} · {str(item.get('archived_at'))[:10]}",
@@ -1484,17 +1548,18 @@ def shared_review_board() -> None:
                     )
                     for item in archived_items
                 ])
-                restore_label = st.selectbox("복원할 항목", list(restore_map), key="review_restore_item")
+                restore_label = st.selectbox("다시 열 항목", list(restore_map), key="review_restore_item")
                 restore_author = st.text_input(
-                    "복원한 사람",
+                    "다시 연 사람",
                     value=st.session_state.get("operator_name", ""),
                     key="review_restore_author",
                 )
-                if st.button("선택 항목 복원", key="restore_review_item", width="stretch"):
+                if st.button("선택 항목 다시 열기", key="restore_review_item", width="stretch"):
                     try:
                         store.restore_item(restore_map[restore_label], restore_author)
                         _cached_review_board_snapshot.clear()
-                        rerun("보관한 확인사항을 복원했습니다.")
+                        st.session_state["review_status_filter"] = "확인 필요"
+                        rerun("보관한 확인사항을 확인 필요 상태로 다시 열었어요.")
                     except (ValueError, ReviewBoardConnectionError) as exc:
                         st.error(str(exc))
 
