@@ -9,7 +9,7 @@ import math
 import sys
 import time
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -42,6 +42,8 @@ from bible_lookup import (
     parse_local_bible,
 )
 from google_sheets_sync import sync_google_sheets
+from audio_ui import audio_page
+from board_history import history_items, render_history
 from google_review_board import (
     RESOLUTION_COMMENT_PREFIX,
     GoogleReviewBoardStore,
@@ -396,6 +398,7 @@ def bootstrap() -> None:
     init_db()
     source_count = row("SELECT COUNT(*) AS count FROM source_files")
     if not source_count or source_count["count"] != 0:
+        refresh_readonly_sources_if_due()
         return
     local_sources = list(SOURCE_DIR.glob("*.xlsx"))
     if local_sources:
@@ -419,6 +422,37 @@ def bootstrap() -> None:
         st.session_state["flash"] = "Google Sheets 읽기 전용 자료로 첫 화면을 준비했습니다."
     except Exception as exc:
         st.session_state["_initial_google_sync_error"] = str(exc)
+
+
+def refresh_readonly_sources_if_due() -> None:
+    """Refresh on visits, at most hourly; failed attempts back off for ten minutes."""
+    if text_secret("AUTO_SOURCE_REFRESH").casefold() == "false":
+        return
+    def due(last_success, last_attempt):
+        try:
+            success_time = datetime.fromisoformat(last_success).timestamp() if last_success else 0
+            attempt_time = float(last_attempt or 0)
+        except (ValueError, TypeError):
+            return True
+        return time.time() - success_time >= 3600 and time.time() - attempt_time >= 600
+    if due(get_app_meta("last_google_sheets_sync_at", ""), get_app_meta("auto_source_attempt", "")):
+        set_app_meta("auto_source_attempt", str(time.time()))
+        info, _ = service_account_secret("google_service_account")
+        try:
+            sync_google_sheets(service_account_info=info)
+        except Exception:
+            # Existing data remains visible. The admin sync panel reports details.
+            pass
+    calendar_id = text_secret("GOOGLE_CALENDAR_ID")
+    if calendar_id and due(get_app_meta("auto_calendar_success", ""), get_app_meta("auto_calendar_attempt", "")):
+        info, _ = service_account_secret("GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT")
+        if info:
+            set_app_meta("auto_calendar_attempt", str(time.time()))
+            try:
+                sync_google_calendar_service_account(calendar_id, info)
+                set_app_meta("auto_calendar_success", datetime.now().astimezone().isoformat())
+            except Exception:
+                pass
 
 
 def rerun(message: str | None = None) -> None:
@@ -1002,12 +1036,12 @@ def review_reply_dialog(
             parent_option_pairs.append((f"{comment.get('author') or '이름 없음'} · {body_preview}", comment_id))
         parent_options = _unique_option_map(parent_option_pairs)
         parent_label = st.selectbox("답글 대상", list(parent_options))
-        statuses = list(REVIEW_STATUS_LABELS)
+        statuses = ["KEEP", "REVIEW_REQUIRED", "IN_PROGRESS"]
         next_status = st.selectbox(
             "댓글 등록 후 상태",
             statuses,
-            index=statuses.index(str(item["status"])),
-            format_func=lambda value: REVIEW_STATUS_LABELS[value],
+            index=0,
+            format_func=lambda value: "현재 상태 유지 · 읽음/의견" if value == "KEEP" else REVIEW_STATUS_LABELS[value],
         )
         if st.form_submit_button("댓글 등록", type="primary", width="stretch"):
             if _has_reserved_review_prefix(reply_body):
@@ -1018,7 +1052,7 @@ def review_reply_dialog(
                         str(item["id"]),
                         reply_author,
                         reply_body,
-                        next_status,
+                        None if next_status == "KEEP" else next_status,
                         parent_comment_id=parent_options[parent_label] or None,
                     )
                     _cached_review_board_snapshot.clear()
@@ -1121,6 +1155,9 @@ def recurring_issue_standard_dialog(store: GoogleReviewBoardStore, item: dict[st
             placeholder="이름 또는 회의명",
         )
         if st.form_submit_button("기준 확정", type="primary", width="stretch"):
+            if not standard.strip():
+                st.error("앞으로 적용할 기준을 한 문장으로 적어 주세요.")
+                return
             body = f"[기준 확정]\n{standard.strip()}"
             try:
                 store.add_comment(str(item["id"]), author, body, "CONFIRMED")
@@ -1132,6 +1169,8 @@ def recurring_issue_standard_dialog(store: GoogleReviewBoardStore, item: dict[st
 
 
 def shared_review_board() -> None:
+    if st.session_state.pop("_board_history_changed", False):
+        _cached_review_board_snapshot.clear()
     store, connection_error = review_board_store()
     if store is None:
         st.markdown("#### 팀 확인 게시판")
@@ -1156,6 +1195,16 @@ def shared_review_board() -> None:
             st.rerun()
         return
 
+    if st.session_state.pop("_open_board_standards", False):
+        st.session_state["board_view"] = "현재 기준"
+    board_view = st.radio("팀 확인 보기", ["진행할 일", "해결 기록", "현재 기준"], horizontal=True, key="board_view")
+    if board_view != "진행할 일":
+        if not has_access("TEAM"):
+            st.info("기록과 운영 기준은 팀원 권한에서 확인할 수 있어요.")
+            return
+        term = st.text_input("기록·댓글·기준 검색", key="board_history_term")
+        render_history(snapshot, term, standards_only=board_view == "현재 기준", archived_only=board_view == "해결 기록", store=store, can_restore=has_access("ADMIN"))
+        return
     counts = {status: int(snapshot["counts"].get(status, 0)) for status in REVIEW_STATUS_LABELS}
     active_count = counts["REVIEW_REQUIRED"] + counts["IN_PROGRESS"]
     current_month = today_kst().strftime("%Y-%m")
@@ -1195,6 +1244,7 @@ def shared_review_board() -> None:
         + "</div>",
         unsafe_allow_html=True,
     )
+    st.caption("기한 지남은 미완료 항목에 포함돼요. 이번 달 해결은 처리 횟수이며, 다시 해결하면 한 번 더 집계해요.")
     if st.button("↻ 목록 새로고침", key="refresh_review_board", type="tertiary", width="content"):
         last_refresh = float(st.session_state.get("_last_review_refresh") or 0)
         if time.time() - last_refresh >= 5:
@@ -1213,51 +1263,7 @@ def shared_review_board() -> None:
             st.session_state["review_status_filter"] = "확인 완료"
             st.rerun()
 
-    if has_access("TEAM") and resolution_comments:
-        raw_item_by_id = {
-            str(item.get("item_id") or ""): item
-            for item in snapshot.get("raw_items", [])
-        }
-        with st.expander(f"해결 기록 찾아보기 · 이번 달 {resolved_this_month}건", expanded=False):
-            resolution_term = st.text_input(
-                "해결 기록 검색",
-                placeholder="제목, 담당자, 해결 메모를 입력하세요",
-                key="review_resolution_search",
-            ).strip().casefold()
-            matching_resolutions: list[tuple[dict[str, object], dict[str, object]]] = []
-            for comment in resolution_comments:
-                item = raw_item_by_id.get(str(comment.get("review_item_id") or ""), {})
-                resolution_note = str(comment.get("body") or "").removeprefix(RESOLUTION_COMMENT_PREFIX).strip()
-                searchable = " ".join(
-                    str(value or "")
-                    for value in (
-                        item.get("title"),
-                        item.get("description"),
-                        item.get("category"),
-                        item.get("owner"),
-                        comment.get("author"),
-                        resolution_note,
-                    )
-                ).casefold()
-                if resolution_term and resolution_term not in searchable:
-                    continue
-                matching_resolutions.append((comment, item))
-            matching_resolutions.sort(
-                key=lambda pair: str(pair[0].get("created_at") or ""),
-                reverse=True,
-            )
-            if not matching_resolutions:
-                empty_state("검색어와 맞는 해결 기록이 없어요.")
-            for comment, item in matching_resolutions[:20]:
-                resolution_note = str(comment.get("body") or "").removeprefix(RESOLUTION_COMMENT_PREFIX).strip()
-                with st.container(border=True):
-                    st.markdown(f"**{html.escape(str(item.get('title') or '제목 없음'))}**")
-                    st.caption(
-                        f"{str(comment.get('created_at') or '')[:10]} · 해결 {comment.get('author') or '이름 없음'}"
-                        + (f" · {item.get('category')}" if item.get("category") else "")
-                    )
-                    if resolution_note and resolution_note != "해결하고 보관했습니다.":
-                        plain_text(resolution_note)
+    # Resolution history and current standards have dedicated, searchable views.
 
     issue_col, standard_col = st.columns(2)
     if issue_col.button(
@@ -1270,13 +1276,12 @@ def shared_review_board() -> None:
         st.session_state["review_status_filter"] = "전체 상태"
         st.rerun()
     if standard_col.button(
-        f"확정 기준 {len(standard_issue_ids)}건",
+        f"확정 기준 {len(history_items(snapshot, standards_only=True))}건",
         key="show_review_standards",
         width="stretch",
-        disabled=not standard_issue_ids,
+        disabled=not history_items(snapshot, standards_only=True),
     ):
-        st.session_state["review_category_filter"] = "반복 이슈"
-        st.session_state["review_status_filter"] = "확인 완료"
+        st.session_state["_open_board_standards"] = True
         st.rerun()
 
     board_search = st.text_input(
@@ -1573,6 +1578,7 @@ def sidebar() -> str:
             "대시보드",
             "예배 인원 현황",
             "팀 확인",
+            "음향 요청",
             "행사",
             "성경 검색",
             "교회력",
@@ -1582,6 +1588,7 @@ def sidebar() -> str:
         menu_labels = {
             "대시보드": "대시보드",
             "팀 확인": "팀 확인",
+            "음향 요청": "음향 요청",
             "교회력": "교회력",
             "행사": "행사",
             "매뉴얼": "매뉴얼",
@@ -1712,6 +1719,7 @@ def review_board_summary() -> None:
             width="stretch",
         ):
             st.session_state["review_status_filter"] = "확인 필요"
+            st.session_state["board_view"] = "진행할 일"
             st.session_state["expanded_review_item"] = str(review_required_items[0]["id"])
             navigate("팀 확인")
 
@@ -1730,24 +1738,20 @@ def review_board_summary() -> None:
         st.caption("긴급·중요 확인사항을 모두 확인했어요.")
     recurring_items = [item for item in items if item.get("category") == "반복 이슈"]
     open_recurring_count = sum(1 for item in recurring_items if item.get("status") != "CONFIRMED")
-    confirmed_standard_count = sum(
-        1 for item in recurring_items
-        if any(
-            str(comment.get("body") or "").startswith("[기준 확정]")
-            for comment in snapshot["comments"].get(str(item["id"]), [])
-        )
-    )
-    if recurring_items:
+    confirmed_standard_count = len(history_items(snapshot, standards_only=True))
+    if recurring_items or confirmed_standard_count:
         if st.button(
             f"반복 이슈 {open_recurring_count}건 · 확정 기준 {confirmed_standard_count}건 보기",
             key="open_recurring_review_items",
             type="tertiary",
             width="stretch",
         ):
+            st.session_state["_open_board_standards"] = True
             st.session_state["review_category_filter"] = "반복 이슈"
             st.session_state["review_status_filter"] = "전체 상태"
             navigate("팀 확인")
     if st.button("게시판 전체 보기", key="open_full_review_board", type="tertiary", width="stretch"):
+        st.session_state["board_view"] = "진행할 일"
         navigate("팀 확인")
 
 
@@ -1811,7 +1815,7 @@ def dashboard_page() -> None:
     if latest_attendance is not None:
         latest_attendance_date = latest_attendance["service_date"].strftime("%m.%d")
         latest_onsite = int(latest_attendance["offline_count"]) if pd.notna(latest_attendance["offline_count"]) else 0
-        latest_online = int(latest_attendance["online_count"]) if pd.notna(latest_attendance["online_count"]) else 0
+        latest_online = int(latest_attendance["online_count"]) if pd.notna(latest_attendance["online_count"]) else "미확인"
         latest_online_label = "송출 없음" if str(latest_attendance["_record_status"]) == "NO_STREAM" else str(latest_online)
         if missing_attendance_dates:
             attendance_label = (
@@ -1921,7 +1925,7 @@ def dashboard_page() -> None:
     st.markdown(f'<div class="ops-section-title">지금 할 일 · {action_count}건</div>', unsafe_allow_html=True)
     if not action_tasks:
         st.markdown(
-            '<div class="ops-empty">7일 안에 처리할 준비업무를 모두 확인했어요.</div>',
+            '<div class="ops-empty">현재 등록된 업무 중 바로 처리할 항목이 없어요.</div>',
             unsafe_allow_html=True,
         )
     for task in action_tasks:
@@ -2855,14 +2859,14 @@ def attendance_page() -> None:
     )
     stats = [
         (comparison_label, f"{week_delta:+d}명" if week_delta is not None else "비교 없음"),
-        ("최근 4회 현장 평균", f"{recent_offline_average:.1f}명" if recent_offline_average is not None else "자료 없음"),
+        (f"최근 {len(recent_four)}회 현장 평균", f"{recent_offline_average:.1f}명" if recent_offline_average is not None else "자료 없음"),
         ("직전 4회 현장 평균 대비", f"{four_week_delta:+.1f}명" if four_week_delta is not None else "비교 없음"),
         fourth_stat,
     ]
     compact_stats(stats, columns=4)
     recent_period = recent_four.sort_values("service_date")
     st.caption(
-        f"최근 4개 집계 완료 회차 · {recent_period.iloc[0]['service_date'].strftime('%Y.%m.%d')}"
+        f"최근 {len(recent_four)}개 집계 완료 회차 · {recent_period.iloc[0]['service_date'].strftime('%Y.%m.%d')}"
         f" ~ {recent_period.iloc[-1]['service_date'].strftime('%Y.%m.%d')} · "
         "누락 주일은 평균에서 제외 · 온라인 집계 기준 확정 전에는 평균을 핵심 지표로 사용하지 않음"
     )
@@ -3134,6 +3138,15 @@ def search_page() -> None:
     if not term.strip():
         empty_state("찾고 싶은 준비업무나 매뉴얼의 단어를 입력해 주세요.")
         return
+    if has_access("TEAM"):
+        store, _ = review_board_store()
+        if store:
+            try:
+                snapshot = _cached_review_board_snapshot(REVIEW_BOARD_SPREADSHEET_ID, store, True, 500)
+                with st.expander("팀 확인 · 해결 기록 · 현재 기준", expanded=True):
+                    render_history(snapshot, term, key="global_board")
+            except ReviewBoardConnectionError:
+                st.warning("팀 확인 검색을 불러오지 못했어요. 다른 자료의 검색 결과는 아래에서 확인할 수 있어요.")
     results = _visible_search_results(
         global_search(term, include_archived),
         allow_team_content=has_access("TEAM"),
@@ -3174,6 +3187,17 @@ def archive_page() -> None:
     hero("보관함", "보관한 자료를 확인하고 필요할 때 다시 복원해요.", "관리")
     if not access_required("ADMIN", "보관 자료 복원"):
         return
+    store, _ = review_board_store()
+    if store:
+        with st.expander("팀 확인 · 해결 기록", expanded=True):
+            try:
+                if st.session_state.pop("_board_history_changed", False):
+                    _cached_review_board_snapshot.clear()
+                snapshot = _cached_review_board_snapshot(REVIEW_BOARD_SPREADSHEET_ID, store, True, 500)
+                term = st.text_input("보관한 팀 확인 검색", key="archive_board_term")
+                render_history(snapshot, term, archived_only=True, key="archive_board", store=store, can_restore=True)
+            except ReviewBoardConnectionError:
+                st.warning("팀 확인 보관 기록을 불러오지 못했어요.")
     events = rows("SELECT id,title,event_date,archived_at FROM events WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
     manuals = rows("SELECT id,title,archived_at FROM manuals WHERE archived_at IS NOT NULL ORDER BY archived_at DESC")
     event_tab, manual_tab = st.tabs([f"행사 ({len(events)})", f"매뉴얼 ({len(manuals)})"])
@@ -3397,12 +3421,14 @@ def data_page() -> None:
 
 
 def main() -> None:
-    bootstrap()
+    if st.session_state.get("main_nav") != "음향 요청":
+        bootstrap()
     nav = sidebar()
     show_flash()
     pages = {
         "대시보드": dashboard_page,
         "팀 확인": review_board_page,
+        "음향 요청": audio_page,
         "교회력": calendar_page,
         "행사": events_page,
         "매뉴얼": manuals_page,

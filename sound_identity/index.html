@@ -1,0 +1,29 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><body>
+<script>
+// Only a random participant recovery token is stored, never requests or replies.
+const storageKey = 'joyful.sound.participant.v1';
+let sent = '', lastClear = null;
+function message(type, extra) {
+  window.parent.postMessage({isStreamlitMessage:true,type,...extra}, window.location.origin);
+}
+window.addEventListener('message', event => {
+  if (event.source !== window.parent || event.origin !== window.location.origin || event.data.type !== 'streamlit:render') return;
+  const args = event.data.args || {};
+  let token = null, available = true;
+  try {
+    if (args.clear_epoch && lastClear !== args.clear_epoch) {
+      localStorage.removeItem(storageKey);
+      lastClear = args.clear_epoch;
+    }
+    if (args.token_to_save) localStorage.setItem(storageKey,args.token_to_save);
+    token = localStorage.getItem(storageKey);
+  } catch (_) { available = false; }
+  const payload = JSON.stringify({token,available});
+  if (sent !== payload) {
+    sent = payload;
+    message('streamlit:setComponentValue',{value:{token,available},dataType:'json'});
+  }
+  message('streamlit:setFrameHeight',{height:0});
+});
+message('streamlit:componentReady',{apiVersion:1});
+</script></body></html>

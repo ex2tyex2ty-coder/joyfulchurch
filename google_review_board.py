@@ -489,7 +489,9 @@ class GoogleReviewBoardStore:
             None,
         )
         if item_row is not None:
-            confirmed_at = created_at if status_change == "CONFIRMED" else ""
+            confirmed_at = created_at if status_change == "CONFIRMED" else (
+                item.get("confirmed_at", "") if status_change is None else ""
+            )
             current_status = status_change or str(item.get("status") or "REVIEW_REQUIRED")
             try:
                 self._execute(
