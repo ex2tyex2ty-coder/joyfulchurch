@@ -18,6 +18,33 @@ class AudioError(RuntimeError):
     pass
 
 
+def connection_help(exc):
+    """Return allowlisted diagnostics only; driver messages may contain secrets."""
+    state = str(getattr(exc, "sqlstate", "") or "")
+    message = str(exc).lower()
+    if isinstance(exc, ImportError):
+        code, hint = "A01", "연결 라이브러리가 없어요. 새 requirements.txt 업로드 후 앱을 재시작해 주세요."
+    elif state.startswith("28") or "password authentication failed" in message:
+        code, hint = "A02", "DB 인증에 실패했어요. 프로젝트 DB 비밀번호와 연결 주소의 사용자명을 확인해 주세요."
+    elif "tenant or user not found" in message:
+        code, hint = "A03", "DB 사용자 또는 프로젝트를 찾지 못했어요. Session pooler 주소를 다시 복사해 주세요."
+    elif any(s in message for s in ("could not translate host", "name or service not known", "getaddrinfo", "nodename nor servname")):
+        code, hint = "A04", "DB 서버 주소를 찾지 못했어요. 연결 주소의 호스트 부분을 확인해 주세요."
+    elif any(s in message for s in ("timeout", "timed out", "network is unreachable", "connection refused")):
+        code, hint = "A05", "DB 서버에 접속하지 못했어요. Supabase 프로젝트 실행 상태와 Session pooler 사용 여부를 확인해 주세요."
+    elif state == "42501":
+        code, hint = "A06", "DB 테이블 생성 또는 접근 권한이 부족해요. 서버용 DB 계정을 확인해 주세요."
+    elif "ssl" in message or "certificate" in message:
+        code, hint = "A07", "DB 보안 연결에 실패했어요. 연결 설정 확인이 필요해요."
+    elif state in ("53300", "53400") or "max client connections" in message:
+        code, hint = "A08", "DB 연결 한도에 도달했어요. 잠시 후 다시 시도해 주세요."
+    elif any(s in message for s in ("invalid conninfo", "invalid uri", "invalid percent", "missing ", "invalid integer value")):
+        code, hint = "A09", "DB 연결 주소 형식을 확인해 주세요. 비밀번호 부분의 특수문자 변환도 확인이 필요해요."
+    else:
+        code, hint = "A99", "DB 연결 또는 처리 중 오류가 발생했어요. 이 오류 코드를 관리자에게 알려주세요."
+    return f"[{code}] {hint} 전송 중이었다면 재전송 전에 내 요청을 확인해 주세요."
+
+
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -63,7 +90,7 @@ class AudioStore:
             if conn:
                 conn.rollback()
             # Never expose database URLs or driver connection errors in public UI.
-            raise AudioError("연결을 확인하지 못했어요. 다시 시도해 주세요. 전송 여부는 내 요청에서 확인할 수 있어요.") from exc
+            raise AudioError(connection_help(exc)) from None
         finally:
             if conn:
                 conn.close()
