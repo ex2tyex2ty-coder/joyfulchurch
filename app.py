@@ -388,6 +388,26 @@ hr { border-color:var(--line) !important; }
   .stButton>button, .stDownloadButton>button, .stLinkButton>a { min-height:2.85rem; font-size:.95rem !important; }
   .bible-verse .content { font-size:1.03rem; line-height:1.72; }
 }
+[data-testid="stChatMessage"] {
+  background:#F2F4F6 !important; color:#191F28 !important;
+  border-radius:16px !important; padding:1rem !important;
+}
+/* st.text does not use Markdown's text styles. Cover it explicitly, including
+   nested spans and WebKit text fill when the saved Streamlit theme is dark. */
+[data-testid="stMainBlockContainer"] [data-testid="stText"],
+[data-testid="stMainBlockContainer"] [data-testid="stText"] *,
+[data-testid="stChatMessage"] [data-testid="stText"],
+[data-testid="stChatMessage"] [data-testid="stText"] * {
+  color:#191F28 !important; -webkit-text-fill-color:#191F28 !important;
+  font-size:16px !important; line-height:1.65 !important; opacity:1 !important;
+  background:transparent !important; overflow-wrap:anywhere !important;
+  white-space:pre-wrap !important;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stChatMessage"] [data-testid="stCaptionContainer"],
+[data-testid="stMainBlockContainer"] [data-testid="stChatMessage"] [data-testid="stCaptionContainer"] * {
+  color:#4E5968 !important; -webkit-text-fill-color:#4E5968 !important;
+  opacity:1 !important; font-size:13px !important; line-height:1.5 !important;
+}
 /* r32: popovers are portaled outside the main page. Paint their inner rows,
    not only the outer box, so a saved dark/system theme cannot create dark-on-dark. */
 [data-baseweb="select"] > div {

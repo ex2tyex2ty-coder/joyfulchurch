@@ -75,6 +75,9 @@ def participant_controls(store, token):
     closed = bool(room["closed"] or room["expires_at"] <= time.time())
     st.subheader(request_sender(person))
     st.caption(room["label"])
+    receipt=st.session_state.get("sound_send_receipt",{})
+    if receipt.get("token")==token:
+        st.success(f"요청이 저장됐어요 · {receipt['body']}\n\n같은 요청을 다시 누르지 않아도 돼요. 아래 대화에서 처리 상태를 확인하세요.")
     if not closed:
         choices = ["내 목소리 올려주세요","내 목소리 내려주세요","반주 올려주세요","반주 내려주세요","모니터가 안 들려요","전원 켜주세요","전원 꺼주세요","담당자 도움이 필요해요"]
         kids = person.get("location") == "키즈룸"
@@ -82,8 +85,10 @@ def participant_controls(store, token):
             choices = KIDS_CHOICES
         st.caption("키즈룸 요청은 음향석에서 확인해요. 같은 요청은 대기 중 한 건으로 묶여요." if kids else "전원 요청은 별명이나 메시지에 장비 이름을 적어 주세요. 버튼은 음향석에 요청을 전달해요.")
         columns = st.columns(2)
+        waiting_bodies={r["body"] for r in requests if r["status"] in {"PENDING","ACK"}}
         for index,body in enumerate(choices):
-            if columns[index%2].button(body,key=f"sound_quick_{index}",width="stretch"):
+            if columns[index%2].button(body,key=f"sound_quick_{index}",width="stretch",
+                help="이미 전달한 요청이에요. 아래 대화에서 상태를 확인하세요." if body in waiting_bodies else None):
                 send_request(store,token,body)
         with st.form("sound_message",clear_on_submit=True):
             body = st.text_input("음향석에 메시지",max_chars=300,placeholder="예: 키즈룸에 담당자 도움이 필요해요" if kids else "예: 건반 앰프 전원을 켜주세요")
@@ -91,8 +96,14 @@ def participant_controls(store, token):
                 send_request(store,token,body)
 
 
+def refresh_requests_button(key):
+    with st.container(key=f"{key}_bar"):
+        st.caption("요청이나 답변이 안 보이면 새로고침해 주세요.")
+        st.button("요청·답변 새로고침", icon=":material/refresh:", key=key, width="stretch")
+
+
 def participant_live(store, token):
-    st.button("내 요청 새로고침", key="sound_mine_refresh", type="tertiary")
+    refresh_requests_button("sound_mine_refresh")
     try:
         person,room,requests = store.mine(token)
     except AudioError as exc:
@@ -101,16 +112,27 @@ def participant_live(store, token):
         return
     closed = bool(room["closed"] or room["expires_at"] <= time.time())
     st.caption(f"{'종료된 예배방' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
-    st.markdown("#### 내 요청과 답변")
-    st.caption("다른 참여자는 이 내용을 볼 수 없어요. 최근 50건을 표시합니다.")
+    st.subheader("음향석과의 대화")
+    waiting=sum(r["status"] in {"PENDING","ACK"} for r in requests)
+    st.caption(f"처리 대기 {waiting}건 · 최근 대화가 위에 표시돼요 · 본인과 음향석만 볼 수 있어요")
     if not requests:
         st.info("버튼을 누르면 음향석으로 요청이 전달돼요.")
-    for request in requests:
+    for request in sorted(requests,key=lambda r:r["updated_at"],reverse=True):
         finished = request["status"] in {"CLOSED","CANCELLED","EXPIRED"}
-        with st.expander(f"{LABELS[request['status']]} · {request['body']}",expanded=not finished):
-            st.caption(f"{request_sender(request)} · {timestamp(request['created_at'])}")
+        with st.container(border=True):
+            state = {"PENDING":"전송 완료 · 음향석 확인 대기", "ACK":"음향석 확인 · 처리 중",
+                "DONE":"조치 완료 · 결과를 확인해 주세요", "CLOSED":"확인 완료",
+                "CANCELLED":"요청 취소", "EXPIRED":"예배방 종료"}[request["status"]]
+            st.markdown(f"**{state}**")
+            with st.chat_message("user",avatar="👤"):
+                st.caption(f"내 요청 · {request_sender(request)} · {timestamp(request['created_at'])}")
+                st.text(request["body"])
             for reply in request["replies"]:
-                st.text(f"{reply['author']} · {timestamp(reply['created_at'])}\n{reply['body']}")
+                with st.chat_message("assistant",avatar="💬"):
+                    st.caption(f"{reply['author']} · {timestamp(reply['created_at'])}")
+                    st.text(reply["body"])
+            if not request["replies"] and request["status"]=="PENDING":
+                st.caption("저장 완료. 아직 음향석의 확인·답변은 없어요.")
             if not finished and not closed:
                 if request["status"]=="DONE":
                     yes,more=st.columns(2)
@@ -129,9 +151,12 @@ def send_request(store,token,body):
         pending = {"id":uuid.uuid4().hex,"body":body}
         st.session_state["sound_pending_send"] = pending
     try:
-        store.send(token,body,pending["id"])
+        request_id=store.send(token,body,pending["id"])
         st.session_state.pop("sound_pending_send",None)
-        st.success("음향석에 전달했어요.")
+        st.session_state["sound_send_receipt"]={"token":token,"body":body,"id":request_id}
+        # A user-initiated send refreshes both composer and inbox once, even
+        # when Realtime is not configured. Never claim success before commit.
+        st.rerun()
     except (AudioError,ValueError) as exc:
         flash_error(exc)
 
@@ -151,7 +176,7 @@ def desk_live(store,room_id):
     if not engineer_access():
         st.warning("음향석 접속 시간이 끝났어요. 접근번호를 다시 입력해 주세요.")
         return
-    st.button("요청 새로고침", key="sound_desk_refresh", type="tertiary")
+    refresh_requests_button("sound_desk_refresh")
     try:
         room,requests=store.desk(room_id)
     except AudioError as exc:
@@ -251,6 +276,19 @@ def audio_page():
     st.html('''<style>
     .st-key-sound_live_region [data-stale="true"] {
         opacity: 1 !important; transition: none !important;
+    }
+    [data-testid="stMainBlockContainer"] :is(.st-key-sound_mine_refresh_bar, .st-key-sound_desk_refresh_bar) div[data-testid="stButton"] button {
+        min-height:56px !important; width:100% !important;
+        background:#FFF1E3 !important; border:1px solid #E8B68C !important;
+        border-radius:14px !important; color:#8F3C00 !important;
+        -webkit-text-fill-color:#8F3C00 !important;
+    }
+    [data-testid="stMainBlockContainer"] :is(.st-key-sound_mine_refresh_bar, .st-key-sound_desk_refresh_bar) div[data-testid="stButton"] button * {
+        color:#8F3C00 !important; -webkit-text-fill-color:#8F3C00 !important;
+        font-size:16px !important; font-weight:750 !important;
+    }
+    [data-testid="stMainBlockContainer"] :is(.st-key-sound_mine_refresh_bar, .st-key-sound_desk_refresh_bar) div[data-testid="stButton"] button:hover {
+        background:#FFE4C9 !important;
     }
     </style>''')
     st.title("예배 도움 요청")
