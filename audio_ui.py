@@ -22,6 +22,12 @@ _realtime_component = declare_component("sound_realtime", path=str(_realtime_pat
 
 
 LABELS = {"PENDING":"엔지니어 확인 대기", "ACK":"엔지니어 확인 · 조정 중", "DONE":"조정 완료 · 소리를 확인해 주세요", "CLOSED":"확인 완료", "CANCELLED":"취소", "EXPIRED":"예배 종료"}
+KIDS_CHOICES = ["예배 소리 키워주세요", "예배 소리 줄여주세요", "예배 소리가 안 들려요", "도움이 필요해요"]
+
+
+def request_sender(request):
+    location = request.get("location", "예배팀")
+    return location if location == request["alias"] else f"{location} · {request['alias']}"
 
 
 def secret(name):
@@ -67,17 +73,20 @@ def participant_controls(store, token):
         flash_error(exc)
         return
     closed = bool(room["closed"] or room["expires_at"] <= time.time())
-    st.markdown(f"### {person['alias']}")
+    st.subheader(request_sender(person))
     st.caption(room["label"])
     if not closed:
         choices = ["내 목소리 올려주세요","내 목소리 내려주세요","반주 올려주세요","반주 내려주세요","모니터가 안 들려요","전원 켜주세요","전원 꺼주세요","담당자 도움이 필요해요"]
-        st.caption("전원 요청은 별명이나 메시지에 장비 이름을 적어 주세요. 버튼은 음향석에 요청을 전달해요.")
+        kids = person.get("location") == "키즈룸"
+        if kids:
+            choices = KIDS_CHOICES
+        st.caption("키즈룸 요청은 음향석에서 확인해요. 같은 요청은 대기 중 한 건으로 묶여요." if kids else "전원 요청은 별명이나 메시지에 장비 이름을 적어 주세요. 버튼은 음향석에 요청을 전달해요.")
         columns = st.columns(2)
         for index,body in enumerate(choices):
             if columns[index%2].button(body,key=f"sound_quick_{index}",width="stretch"):
                 send_request(store,token,body)
         with st.form("sound_message",clear_on_submit=True):
-            body = st.text_input("음향석에 메시지",max_chars=300,placeholder="예: 건반 앰프 전원을 켜주세요")
+            body = st.text_input("음향석에 메시지",max_chars=300,placeholder="예: 키즈룸에 담당자 도움이 필요해요" if kids else "예: 건반 앰프 전원을 켜주세요")
             if st.form_submit_button("요청 보내기",type="primary",width="stretch"):
                 send_request(store,token,body)
 
@@ -99,7 +108,7 @@ def participant_live(store, token):
     for request in requests:
         finished = request["status"] in {"CLOSED","CANCELLED","EXPIRED"}
         with st.expander(f"{LABELS[request['status']]} · {request['body']}",expanded=not finished):
-            st.caption(f"{request['alias']} · {timestamp(request['created_at'])}")
+            st.caption(f"{request_sender(request)} · {timestamp(request['created_at'])}")
             for reply in request["replies"]:
                 st.text(f"{reply['author']} · {timestamp(reply['created_at'])}\n{reply['body']}")
             if not finished and not closed:
@@ -158,7 +167,7 @@ def desk_live(store,room_id):
         if not show_finished and request["status"] in {"CLOSED","CANCELLED","EXPIRED"}:
             continue
         with st.container(border=True):
-            st.markdown(f"**{request['alias']}**")
+            st.subheader(request_sender(request))
             st.text(request["body"])
             age=max(0,int(time.time()-request["created_at"]))
             st.caption(f"{LABELS[request['status']]} · {timestamp(request['created_at'])} 접수" + (f" · 담당 {request['engineer']}" if request["engineer"] else ""))
@@ -244,8 +253,8 @@ def audio_page():
         opacity: 1 !important; transition: none !important;
     }
     </style>''')
-    st.title("음향 요청")
-    st.caption("별명으로 요청하고, 음향석의 답변을 확인해요.")
+    st.title("예배 도움 요청")
+    st.caption("예배팀과 키즈룸의 요청을 음향석에서 함께 확인해요.")
     url=secret("AUDIO_DATABASE_URL")
     if not url:
         st.info("음향 요청 기능을 준비 중이에요. 관리자가 전용 저장소를 연결하면 사용할 수 있어요.")
@@ -269,13 +278,14 @@ def audio_page():
                 except AudioError:
                     st.caption("자동 복귀하지 못했어요. 예배방에 입장하거나 개인 복귀코드를 확인해 주세요.")
         if not token:
+            location = st.radio("요청 위치",["예배팀","키즈룸"],horizontal=True,key="sound_join_location")
             with st.form("sound_join"):
                 code=st.text_input("예배방 코드",type="password")
-                alias=st.text_input("내 별명",placeholder="1번 마이크 / 건반 / 기타",max_chars=30)
+                alias=st.text_input("내 별명",placeholder="비워두면 키즈룸으로 표시해요" if location=="키즈룸" else "1번 마이크 / 건반 / 기타",max_chars=30)
                 if st.form_submit_button("입장",type="primary",width="stretch"):
                     token=st.session_state.setdefault("sound_join_token",secrets.token_urlsafe(32))
                     try:
-                        store.join(code,alias,token)
+                        store.join(code,alias.strip() or ("키즈룸" if location=="키즈룸" else ""),token,location=location)
                         st.session_state["sound_person_token"]=token
                         st.session_state.pop("sound_skip_recovery",None)
                         st.session_state.pop("sound_join_token",None)
@@ -294,14 +304,15 @@ def audio_page():
                         except AudioError as exc:
                             flash_error(exc)
             return
-        with st.expander("내 별명·복귀코드"):
+        with st.expander("내 별명·위치·복귀코드"):
             st.caption("같은 브라우저에서는 자동 복귀해요. 브라우저가 저장을 차단하거나 다른 기기라면 이 코드로 돌아올 수 있어요. 공유하지 마세요.")
             st.code(token,language=None)
             with st.form("sound_rename"):
                 alias=st.text_input("새 별명",max_chars=30)
+                location=st.selectbox("요청 위치 변경",["현재 위치 유지","예배팀","키즈룸"])
                 if st.form_submit_button("별명 변경"):
                     try:
-                        store.rename(token,alias)
+                        store.rename(token,alias,location=None if location=="현재 위치 유지" else location)
                         st.rerun()
                     except (AudioError,ValueError) as exc:
                         flash_error(exc)

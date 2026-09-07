@@ -108,6 +108,14 @@ class AudioStore:
         with self.transaction() as conn:
             for statement in SCHEMA:
                 self.sql(conn, statement)
+            # Additive migration: keep existing people, requests and replies.
+            for table in ("sound_people", "sound_requests"):
+                if self.test_path:
+                    columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+                    if "location" not in columns:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN location TEXT NOT NULL DEFAULT '예배팀'")
+                else:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT '예배팀'")
             if not self.test_path:
                 # Supabase's public API must not expose rows to anon/authenticated
                 # clients. Only the server database role reads these tables.
@@ -162,8 +170,9 @@ class AudioStore:
         with self.transaction() as conn:
             return [dict(r) for r in self.sql(conn, "SELECT id,label,expires_at FROM sound_rooms WHERE closed=0 AND expires_at>? ORDER BY expires_at DESC", (time.time(),)).fetchall()]
 
-    def join(self, code, alias, token):
+    def join(self, code, alias, token, location="예배팀"):
         alias = self.text(alias, "별명", 30)
+        location = self.text(location, "요청 위치", 30)
         with self.transaction() as conn:
             found = self.sql(conn, "SELECT id FROM sound_rooms WHERE code_hash=?", (digest(code.strip()),)).fetchone()
             if not found:
@@ -178,18 +187,20 @@ class AudioStore:
             if duplicate:
                 raise ValueError("이 예배방에서 사용 중인 별명이에요. 다른 이름을 정해 주세요.")
             person_id = uuid.uuid4().hex
-            self.sql(conn, "INSERT INTO sound_people(id,room_id,token_hash,alias,alias_key) VALUES(?,?,?,?,?)", (person_id,room["id"],digest(token),alias,alias.casefold()))
-            return {"id":person_id,"room_id":room["id"],"alias":alias}
+            self.sql(conn, "INSERT INTO sound_people(id,room_id,token_hash,alias,alias_key,location) VALUES(?,?,?,?,?,?)", (person_id,room["id"],digest(token),alias,alias.casefold(),location))
+            return {"id":person_id,"room_id":room["id"],"alias":alias,"location":location}
 
-    def rename(self, token, alias):
+    def rename(self, token, alias, location=None):
         alias = self.text(alias,"별명",30)
+        if location is not None:
+            location = self.text(location,"요청 위치",30)
         with self.transaction() as conn:
             person = self.person(conn,token)
             self.room(conn,person["room_id"])
             found = self.sql(conn,"SELECT id FROM sound_people WHERE room_id=? AND alias_key=? AND id<>?",(person["room_id"],alias.casefold(),person["id"])).fetchone()
             if found:
                 raise ValueError("이미 사용 중인 별명이에요.")
-            self.sql(conn,"UPDATE sound_people SET alias=?,alias_key=? WHERE id=?",(alias,alias.casefold(),person["id"]))
+            self.sql(conn,"UPDATE sound_people SET alias=?,alias_key=?,location=? WHERE id=?",(alias,alias.casefold(),location if location is not None else person["location"],person["id"]))
 
     def send(self, token, body, request_id):
         body = self.text(body,"요청",300)
@@ -211,7 +222,7 @@ class AudioStore:
             now = time.time()
             if last and now-last < 2:
                 raise ValueError("요청을 전달 중이에요. 잠시 뒤 다시 눌러 주세요.")
-            self.sql(conn,"INSERT INTO sound_requests(id,room_id,person_id,alias,body,status,created_at,updated_at) VALUES(?,?,?,?,?,'PENDING',?,?)",(request_id,person["room_id"],person["id"],person["alias"],body,now,now))
+            self.sql(conn,"INSERT INTO sound_requests(id,room_id,person_id,alias,body,status,created_at,updated_at,location) VALUES(?,?,?,?,?,'PENDING',?,?,?)",(request_id,person["room_id"],person["id"],person["alias"],body,now,now,person["location"]))
             return request_id
 
     def _with_replies(self, conn, rows):
