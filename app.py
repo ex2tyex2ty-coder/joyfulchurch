@@ -95,7 +95,7 @@ CSS = """
 :root {
   --brand:#FF8207; --brand-pressed:#E96F00; --brand-soft:#FFF1E3;
   --bg:#F7F8FA; --surface:#FFFFFF; --text:#191F28; --text-2:#4E5968;
-  --text-3:#667180; --line:#E5E8EB; --danger:#D64545; --warning:#B86E00;
+  --text-3:#5C6675; --line:#E5E8EB; --danger:#D64545; --warning:#B86E00;
   --shadow:0 4px 18px rgba(25,31,40,.055); color-scheme:light !important;
 }
 html, body, .stApp { color-scheme:light !important; }
@@ -387,6 +387,79 @@ hr { border-color:var(--line) !important; }
   [data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"] { overflow-wrap:anywhere; }
   .stButton>button, .stDownloadButton>button, .stLinkButton>a { min-height:2.85rem; font-size:.95rem !important; }
   .bible-verse .content { font-size:1.03rem; line-height:1.72; }
+}
+/* r32: popovers are portaled outside the main page. Paint their inner rows,
+   not only the outer box, so a saved dark/system theme cannot create dark-on-dark. */
+[data-baseweb="select"] > div {
+  min-height:48px !important; background:#FFFFFF !important;
+  border:1px solid #D1D6DB !important; border-radius:12px !important;
+}
+[data-baseweb="select"] > div div,
+[data-baseweb="select"] input {
+  background:transparent !important; color:#191F28 !important;
+  -webkit-text-fill-color:#191F28 !important; caret-color:#191F28 !important;
+}
+[data-baseweb="select"] svg { color:#4E5968 !important; fill:currentColor !important; }
+[data-baseweb="select"]:focus-within > div {
+  border-color:#B95000 !important; box-shadow:0 0 0 3px #FFF1E3 !important;
+}
+[data-baseweb="popover"] > div,
+[data-baseweb="popover"] [data-baseweb="menu"],
+[data-baseweb="popover"] ul,
+[role="listbox"] {
+  background:#FFFFFF !important; color:#191F28 !important;
+  color-scheme:light !important; border-radius:12px !important;
+}
+[role="option"], [data-baseweb="menu"] li {
+  background:#FFFFFF !important; color:#191F28 !important;
+  -webkit-text-fill-color:#191F28 !important;
+  min-height:44px; line-height:1.5 !important;
+}
+[role="option"] *, [data-baseweb="menu"] li * {
+  background:transparent !important; color:inherit !important;
+  -webkit-text-fill-color:inherit !important;
+}
+[role="option"]:hover, [role="option"]:focus,
+[data-baseweb="menu"] li:hover { background:#F2F4F6 !important; }
+[role="option"][aria-selected="true"],
+[data-baseweb="menu"] li[aria-selected="true"] {
+  background:#FFF1E3 !important; color:#8F3C00 !important;
+  -webkit-text-fill-color:#8F3C00 !important; font-weight:700 !important;
+}
+[role="option"][aria-disabled="true"] {
+  background:#F2F4F6 !important; color:#5C6675 !important;
+  -webkit-text-fill-color:#5C6675 !important;
+}
+[data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"] {
+  background:#FFFFFF !important; color:#191F28 !important;
+  color-scheme:light !important; border-color:#D1D6DB !important;
+}
+[data-baseweb="input"] button, [data-testid="stNumberInput"] button {
+  background:#F2F4F6 !important; color:#4E5968 !important;
+  -webkit-text-fill-color:#4E5968 !important;
+}
+[data-baseweb="input"] button svg { fill:currentColor !important; }
+[data-testid="stAlert"] { background:#F2F4F6 !important; }
+[data-testid="stAlert"] [data-testid="stAlertContainer"] { background:transparent !important; }
+[data-testid="stExpander"] summary { background:#FFFFFF !important; border-radius:12px; }
+[data-testid="stTabs"] [role="tab"][aria-selected="false"] { background:transparent !important; }
+[data-testid="stFileUploaderDropzone"] {
+  background:#F2F4F6 !important; color:#4E5968 !important; border:1px dashed #B0B8C1 !important;
+}
+[data-testid="stFileUploaderDropzone"] * {
+  color:#4E5968 !important; -webkit-text-fill-color:#4E5968 !important;
+}
+[data-testid="stMainBlockContainer"] button:focus-visible,
+[role="option"]:focus-visible {
+  outline:2px solid #B95000 !important; outline-offset:2px !important;
+}
+@media (max-width:640px) {
+  [data-baseweb="select"] input, [data-baseweb="select"] > div,
+  [role="option"], [data-testid="stTextInput"] input,
+  [data-testid="stTextArea"] textarea, [data-testid="stNumberInput"] input,
+  [data-testid="stDateInput"] input { font-size:16px !important; }
+  [data-testid="stFormSubmitButton"] button,
+  [data-testid="stButton"] button { min-height:44px; }
 }
 </style>
 """
