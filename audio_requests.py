@@ -170,14 +170,23 @@ class AudioStore:
         with self.transaction() as conn:
             return [dict(r) for r in self.sql(conn, "SELECT id,label,expires_at FROM sound_rooms WHERE closed=0 AND expires_at>? ORDER BY expires_at DESC", (time.time(),)).fetchall()]
 
-    def join(self, code, alias, token, location="예배팀"):
+    def join_room(self, room_id, alias, token, location="예배팀"):
+        """Public room selection; private inbox capability is still per person."""
+        if not room_id:
+            raise AudioError("참여할 예배방을 선택해 주세요.")
+        return self.join("", alias, token, location, room_id=room_id)
+
+    def join(self, code, alias, token, location="예배팀", *, room_id=None):
         alias = self.text(alias, "별명", 30)
         location = self.text(location, "요청 위치", 30)
         with self.transaction() as conn:
-            found = self.sql(conn, "SELECT id FROM sound_rooms WHERE code_hash=?", (digest(code.strip()),)).fetchone()
-            if not found:
-                raise AudioError("예배방 코드를 확인해 주세요.")
-            room = self.room(conn, found["id"])
+            if room_id is None:
+                found = self.sql(conn, "SELECT id FROM sound_rooms WHERE code_hash=?", (digest(code.strip()),)).fetchone()
+                if not found:
+                    raise AudioError("예배방 코드를 확인해 주세요.")
+                room_id = found["id"]
+            # Recheck under lock: a displayed room may have closed meanwhile.
+            room = self.room(conn, room_id)
             existing = self.sql(conn, "SELECT * FROM sound_people WHERE token_hash=?", (digest(token),)).fetchone()
             if existing:
                 if existing["room_id"] != room["id"]:

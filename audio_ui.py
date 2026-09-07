@@ -278,14 +278,23 @@ def audio_page():
                 except AudioError:
                     st.caption("자동 복귀하지 못했어요. 예배방에 입장하거나 개인 복귀코드를 확인해 주세요.")
         if not token:
+            st.button("예배방 목록 새로고침",key="sound_rooms_refresh",type="tertiary")
+            try:
+                available = store.active_rooms()
+            except AudioError as exc:
+                flash_error(exc)
+                available = []
+            room_labels = {r["id"]:r["label"] for r in available}
+            if not available:
+                st.info("지금 열린 예배방이 없어요. 음향석에서 방을 만든 뒤 목록을 새로고침해 주세요.")
             location = st.radio("요청 위치",["예배팀","키즈룸"],horizontal=True,key="sound_join_location")
             with st.form("sound_join"):
-                code=st.text_input("예배방 코드",type="password")
+                selected_room=st.selectbox("참여할 예배방",list(room_labels),format_func=room_labels.get,placeholder="예배방을 선택하세요",disabled=not available)
                 alias=st.text_input("내 별명",placeholder="비워두면 키즈룸으로 표시해요" if location=="키즈룸" else "1번 마이크 / 건반 / 기타",max_chars=30)
-                if st.form_submit_button("입장",type="primary",width="stretch"):
+                if st.form_submit_button("입장",type="primary",width="stretch",disabled=not available):
                     token=st.session_state.setdefault("sound_join_token",secrets.token_urlsafe(32))
                     try:
-                        store.join(code,alias.strip() or ("키즈룸" if location=="키즈룸" else ""),token,location=location)
+                        store.join_room(selected_room,alias.strip() or ("키즈룸" if location=="키즈룸" else ""),token,location=location)
                         st.session_state["sound_person_token"]=token
                         st.session_state.pop("sound_skip_recovery",None)
                         st.session_state.pop("sound_join_token",None)
@@ -316,7 +325,7 @@ def audio_page():
                         st.rerun()
                     except (AudioError,ValueError) as exc:
                         flash_error(exc)
-            if st.button("나가기",key="sound_leave"):
+            if st.button("나가기 · 다른 예배방 선택",key="sound_leave"):
                 st.session_state.pop("sound_person_token",None)
                 st.session_state.pop("sound_pending_send",None)
                 st.session_state["sound_clear_epoch"] = uuid.uuid4().hex
@@ -364,15 +373,11 @@ def audio_page():
                 pending=st.session_state.setdefault("sound_new_room",{"id":uuid.uuid4().hex,"code":secrets.token_urlsafe(9)})
                 try:
                     store.create_room(label,pending["code"],pending["id"])
-                    st.session_state["sound_room_invite"]=dict(pending)
                     st.session_state.pop("sound_new_room",None)
                     st.rerun()
                 except (AudioError,ValueError) as exc:
                     flash_error(exc)
-    invite=st.session_state.get("sound_room_invite")
-    if invite:
-        st.caption("참여자에게 이 예배방 코드를 전달해 주세요. 방은 12시간 뒤 자동 종료돼요.")
-        st.code(invite["code"],language=None)
+    st.caption("참여자는 방 이름을 선택해 입장해요. 생성 후 12시간 동안 열리며 음향석에서 먼저 종료할 수 있어요.")
     if not rooms:
         return
     room_map={r["id"]:r["label"] for r in rooms}
