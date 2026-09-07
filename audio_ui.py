@@ -14,6 +14,7 @@ from streamlit.components.v1 import declare_component
 from audio_requests import AudioStore, AudioError
 import audio_realtime
 from audio_profiles import GROUPS, INSTRUMENTS, CUSTOM_INSTRUMENT, selected_instrument, request_groups, request_sender
+from audio_chat_ui import chat_thread
 
 
 _identity_path = Path(__file__).parent / "sound_identity"
@@ -120,7 +121,7 @@ def refresh_requests_button(key):
 def participant_live(store, token):
     refresh_requests_button("sound_mine_refresh")
     try:
-        person,room,requests = store.mine(token)
+        room,thread = store.my_conversation(token)
     except AudioError as exc:
         st.error("연결 확인 중 · 아래 상태는 최신 상태가 아닐 수 있어요.")
         flash_error(exc)
@@ -128,35 +129,27 @@ def participant_live(store, token):
     closed = bool(room["closed"] or room["expires_at"] <= time.time())
     st.caption(f"{'종료된 예배방' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
     st.subheader("음향석과의 대화")
-    waiting=sum(r["status"] in {"PENDING","ACK"} for r in requests)
-    st.caption(f"처리 대기 {waiting}건 · 최근 대화가 위에 표시돼요 · 본인과 음향석만 볼 수 있어요")
-    if not requests:
-        st.info("버튼을 누르면 음향석으로 요청이 전달돼요.")
-    for request in sorted(requests,key=lambda r:r["updated_at"],reverse=True):
-        finished = request["status"] in {"CLOSED","CANCELLED","EXPIRED"}
-        with st.container(border=True):
-            state = {"PENDING":"전송 완료 · 음향석 확인 대기", "ACK":"음향석 확인 · 처리 중",
-                "DONE":"조치 완료 · 결과를 확인해 주세요", "CLOSED":"확인 완료",
-                "CANCELLED":"요청 취소", "EXPIRED":"예배방 종료"}[request["status"]]
-            st.markdown(f"**{state}**")
-            with st.chat_message("user",avatar="👤"):
-                st.caption(f"내 요청 · {request_sender(request)} · {timestamp(request['created_at'])}")
-                st.text(request["body"])
-            for reply in request["replies"]:
-                with st.chat_message("assistant",avatar="💬"):
-                    st.caption(f"{reply['author']} · {timestamp(reply['created_at'])}")
-                    st.text(reply["body"])
-            if not request["replies"] and request["status"]=="PENDING":
-                st.caption("저장 완료. 아직 음향석의 확인·답변은 없어요.")
-            if not finished and not closed:
-                if request["status"]=="DONE":
-                    yes,more=st.columns(2)
-                    if yes.button("좋아요",key=f"sound_yes_{request['id']}",type="primary"):
-                        participant_action(store,token,request,"confirm")
-                    if more.button("추가 조정 필요",key=f"sound_more_{request['id']}"):
-                        participant_action(store,token,request,"more")
-                if st.button("요청 취소",key=f"sound_cancel_{request['id']}",type="tertiary"):
-                    participant_action(store,token,request,"cancel")
+    st.caption(f"처리 대기 {thread['waiting']}건 · 요청과 답변이 시간순으로 이어져요 · 본인과 음향석만 볼 수 있어요")
+    chat_thread(room,thread,desk=False,act=lambda action,message="": thread_action(store,room,thread,action,message,token=token))
+
+
+def thread_action(store,room,thread,action,message="",token=None):
+    if token is None and not engineer_access():
+        st.error("음향석 접근번호를 다시 확인해 주세요.")
+        return
+    key="sound_thread_pending_"+thread["person"]["id"]
+    pending=st.session_state.get(key)
+    if not pending or (pending["action"],pending["message"])!=(action,message):
+        pending={"id":uuid.uuid4().hex,"action":action,"message":message}
+        st.session_state[key]=pending
+    try:
+        store.conversation_action(room["id"],thread["person"]["id"],thread["revision"],action,pending["id"],
+            engineer_id=st.session_state.get("sound_engineer_id","") if token is None else "",
+            engineer=st.session_state.get("sound_engineer_name","") if token is None else "",message=message,token=token)
+        st.session_state.pop(key,None)
+        st.rerun()
+    except (AudioError,ValueError) as exc:
+        flash_error(exc)
 
 
 def send_request(store,token,body):
@@ -193,45 +186,24 @@ def desk_live(store,room_id):
         return
     refresh_requests_button("sound_desk_refresh")
     try:
-        room,requests=store.desk(room_id)
+        room,threads=store.conversations(room_id)
     except AudioError as exc:
         st.error("연결 확인 중 · 요청 수신이 지연될 수 있어요.")
         flash_error(exc)
         return
     closed=bool(room["closed"] or room["expires_at"]<=time.time())
-    st.caption(f"{'예배방 종료' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())} · 최근 150건")
-    waiting=sum(r["status"] in {"PENDING","ACK"} for r in requests)
-    st.markdown(f"### 처리할 요청 {waiting}건")
-    show_finished=st.toggle("완료·취소 기록 보기",key="sound_finished")
-    for request in requests:
-        if not show_finished and request["status"] in {"CLOSED","CANCELLED","EXPIRED"}:
-            continue
-        with st.container(border=True):
-            st.subheader(request_sender(request))
-            st.text(request["body"])
-            age=max(0,int(time.time()-request["created_at"]))
-            st.caption(f"{LABELS[request['status']]} · {timestamp(request['created_at'])} 접수" + (f" · 담당 {request['engineer']}" if request["engineer"] else ""))
-            if age>120 and request["status"] in {"PENDING","ACK"}:
-                st.warning("시간이 지난 요청입니다. 현재도 필요한 조정인지 확인해 주세요.")
-            for reply in request["replies"][-4:]:
-                st.text(f"{reply['author']}: {reply['body']}")
-            own=not request["engineer_id"] or request["engineer_id"]==st.session_state["sound_engineer_id"]
-            if not closed and request["status"] in {"PENDING","ACK","DONE"}:
-                c1,c2=st.columns(2)
-                if c1.button("확인 · 제가 처리할게요",key=f"sound_ack_{request['id']}",disabled=not own or request["status"]=="DONE",width="stretch"):
-                    desk_action(store,room_id,request,"ack")
-                if c2.button("조정했어요",key=f"sound_done_{request['id']}",disabled=not own or request["status"]=="DONE",type="primary",width="stretch"):
-                    desk_action(store,room_id,request,"done")
-                with st.form(f"sound_reply_{request['id']}",clear_on_submit=True):
-                    reply=st.text_input("개인 답변",max_chars=300,key=f"sound_reply_text_{request['id']}")
-                    if st.form_submit_button("답변 보내기",disabled=not own):
-                        desk_action(store,room_id,request,"reply",reply)
-                if own and request["engineer_id"] and st.button("담당 해제 · 인계",key=f"sound_release_{request['id']}",type="tertiary"):
-                    desk_action(store,room_id,request,"release")
+    st.caption(f"{'예배방 종료 · 기록 열람' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
+    archived=sum(bool(t["person"].get("desk_archived")) for t in threads)
+    st.subheader(f"진행 대화 {len(threads)-archived}명 · 보관 {archived}명")
+    view=st.radio("대화 목록",["진행 대화","보관함"],horizontal=True,key="sound_thread_view")
+    shown=[t for t in threads if bool(t["person"].get("desk_archived"))==(view=="보관함")]
+    if not shown: st.info("보관한 대화가 없어요." if view=="보관함" else "진행 중인 대화가 없어요. 보관한 대화는 보관함에서 불러올 수 있어요.")
+    for thread in shown:
+        chat_thread(room,thread,desk=True,act=lambda action,message="",thread=thread: thread_action(store,room,thread,action,message))
 
 
 @st.cache_resource(show_spinner=False)
-def prepare_realtime(database_url, _store):
+def prepare_realtime(database_url, _store, schema_version):
     audio_realtime.install(_store)
     return True
 
@@ -248,7 +220,7 @@ def live_panel(renderer, store, identity):
     if url and key and _realtime_component:
         try:
             url = audio_realtime.validate_settings(url,key)
-            prepare_realtime(secret("AUDIO_DATABASE_URL"),store)
+            prepare_realtime(secret("AUDIO_DATABASE_URL"),store,"r37")
             if st.button("실시간 수신 다시 연결",type="tertiary",key="sound_reconnect"):
                 st.session_state["sound_rt_restart"] = uuid.uuid4().hex
                 st.session_state.pop("sound_rt_auth",None)
@@ -433,7 +405,7 @@ def audio_page():
         st.session_state["sound_engineer_until"]=0
         st.rerun()
     try:
-        rooms=store.active_rooms()
+        rooms=store.rooms_for_desk()
     except AudioError as exc:
         flash_error(exc)
         return
@@ -451,7 +423,7 @@ def audio_page():
     st.caption("참여자는 방 이름을 선택해 입장해요. 생성 후 12시간 동안 열리며 음향석에서 먼저 종료할 수 있어요.")
     if not rooms:
         return
-    room_map={r["id"]:r["label"] for r in rooms}
+    room_map={r["id"]:r["label"]+(" · 종료됨" if r["closed"] or r["expires_at"]<=time.time() else "") for r in rooms}
     room_id=st.selectbox("수신할 예배방",list(room_map),format_func=room_map.get)
     with st.expander("예배방 종료"):
         confirmed=st.checkbox("현재 방의 미처리 요청도 종료할게요")

@@ -32,7 +32,7 @@ CREATE OR REPLACE FUNCTION public.joyful_sound_changed() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE rid text; pid text; p record;
 BEGIN
-  IF TG_TABLE_NAME = 'sound_requests' THEN
+  IF TG_TABLE_NAME IN ('sound_requests', 'sound_thread_messages') THEN
     rid := NEW.room_id; pid := NEW.person_id;
   ELSIF TG_TABLE_NAME = 'sound_replies' THEN
     SELECT room_id, person_id INTO rid, pid FROM public.sound_requests WHERE id=NEW.request_id;
@@ -64,4 +64,7 @@ CREATE TRIGGER joyful_sound_room_changed AFTER UPDATE ON public.sound_rooms
 FOR EACH ROW EXECUTE FUNCTION public.joyful_sound_changed();
 DROP TRIGGER IF EXISTS joyful_sound_person_changed ON public.sound_people;
 CREATE TRIGGER joyful_sound_person_changed AFTER UPDATE ON public.sound_people
+FOR EACH ROW EXECUTE FUNCTION public.joyful_sound_changed();
+DROP TRIGGER IF EXISTS joyful_sound_thread_changed ON public.sound_thread_messages;
+CREATE TRIGGER joyful_sound_thread_changed AFTER INSERT ON public.sound_thread_messages
 FOR EACH ROW EXECUTE FUNCTION public.joyful_sound_changed();

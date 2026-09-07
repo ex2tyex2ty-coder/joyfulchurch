@@ -13,6 +13,7 @@ import time
 import uuid
 from contextlib import contextmanager, ExitStack
 from audio_profiles import clean_instrument
+from audio_conversations import ConversationStore
 
 
 class AudioError(RuntimeError):
@@ -60,7 +61,7 @@ SCHEMA = [
 ]
 
 
-class AudioStore:
+class AudioStore(ConversationStore):
     def __init__(self, database_url: str = "", *, test_sqlite_path: str | None = None):
         self.url = database_url
         self.test_path = test_sqlite_path
@@ -109,6 +110,13 @@ class AudioStore:
         with self.transaction() as conn:
             for statement in SCHEMA:
                 self.sql(conn, statement)
+            self.sql(conn,"CREATE TABLE IF NOT EXISTS sound_thread_messages (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES sound_rooms(id), person_id TEXT NOT NULL REFERENCES sound_people(id), author TEXT NOT NULL, author_id TEXT NOT NULL, side TEXT NOT NULL, body TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL)")
+            self.sql(conn,"CREATE INDEX IF NOT EXISTS sound_thread_person ON sound_thread_messages(person_id,created_at)")
+            if self.test_path:
+                if "desk_archived" not in {r["name"] for r in conn.execute("PRAGMA table_info(sound_people)")}:
+                    conn.execute("ALTER TABLE sound_people ADD COLUMN desk_archived INTEGER NOT NULL DEFAULT 0")
+            else:
+                conn.execute("ALTER TABLE sound_people ADD COLUMN IF NOT EXISTS desk_archived INTEGER NOT NULL DEFAULT 0")
             # Additive migration: keep existing people, requests and replies.
             for table in ("sound_people", "sound_requests"):
                 if self.test_path:
@@ -123,7 +131,7 @@ class AudioStore:
             if not self.test_path:
                 # Supabase's public API must not expose rows to anon/authenticated
                 # clients. Only the server database role reads these tables.
-                for table in ("sound_rooms","sound_people","sound_requests","sound_replies"):
+                for table in ("sound_rooms","sound_people","sound_requests","sound_replies","sound_thread_messages"):
                     self.sql(conn, f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         if not self.test_path and self._pool is None:
             try:
@@ -239,6 +247,7 @@ class AudioStore:
             if last and now-last < 2:
                 raise ValueError("요청을 전달 중이에요. 잠시 뒤 다시 눌러 주세요.")
             self.sql(conn,"INSERT INTO sound_requests(id,room_id,person_id,alias,body,status,created_at,updated_at,location,instrument) VALUES(?,?,?,?,?,'PENDING',?,?,?,?)",(request_id,person["room_id"],person["id"],person["alias"],body,now,now,person["location"],person["instrument"]))
+            self.sql(conn,"UPDATE sound_people SET desk_archived=0 WHERE id=?",(person["id"],))
             return request_id
 
     def _with_replies(self, conn, rows):
