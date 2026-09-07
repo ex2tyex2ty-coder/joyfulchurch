@@ -12,10 +12,13 @@ import streamlit as st
 from streamlit.components.v1 import declare_component
 
 from audio_requests import AudioStore, AudioError
+import audio_realtime
 
 
 _identity_path = Path(__file__).parent / "sound_identity"
 _identity_component = declare_component("sound_identity", path=str(_identity_path)) if _identity_path.exists() else None
+_realtime_path = Path(__file__).parent / "sound_realtime"
+_realtime_component = declare_component("sound_realtime", path=str(_realtime_path)) if _realtime_path.exists() else None
 
 
 LABELS = {"PENDING":"엔지니어 확인 대기", "ACK":"엔지니어 확인 · 조정 중", "DONE":"조정 완료 · 소리를 확인해 주세요", "CLOSED":"확인 완료", "CANCELLED":"취소", "EXPIRED":"예배 종료"}
@@ -55,8 +58,8 @@ def participant_action(store, token, request, action):
         flash_error(exc)
 
 
-@st.fragment(run_every="2s")
-def participant_live(store, token):
+@st.fragment
+def participant_controls(store, token):
     try:
         person,room,requests = store.mine(token)
     except AudioError as exc:
@@ -64,7 +67,6 @@ def participant_live(store, token):
         flash_error(exc)
         return
     closed = bool(room["closed"] or room["expires_at"] <= time.time())
-    st.caption(f"{'종료된 예배방' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())} · 약 2초마다 확인")
     st.markdown(f"### {person['alias']}")
     st.caption(room["label"])
     if not closed:
@@ -78,6 +80,18 @@ def participant_live(store, token):
             body = st.text_input("음향석에 메시지",max_chars=300,placeholder="예: 건반 앰프 전원을 켜주세요")
             if st.form_submit_button("요청 보내기",type="primary",width="stretch"):
                 send_request(store,token,body)
+
+
+def participant_live(store, token):
+    st.button("내 요청 새로고침", key="sound_mine_refresh", type="tertiary")
+    try:
+        person,room,requests = store.mine(token)
+    except AudioError as exc:
+        st.error("연결 확인 중 · 아래 상태는 최신 상태가 아닐 수 있어요.")
+        flash_error(exc)
+        return
+    closed = bool(room["closed"] or room["expires_at"] <= time.time())
+    st.caption(f"{'종료된 예배방' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
     st.markdown("#### 내 요청과 답변")
     st.caption("다른 참여자는 이 내용을 볼 수 없어요. 최근 50건을 표시합니다.")
     if not requests:
@@ -124,11 +138,11 @@ def desk_action(store,room_id,request,action,message=""):
         flash_error(exc)
 
 
-@st.fragment(run_every="2s")
 def desk_live(store,room_id):
     if not engineer_access():
         st.warning("음향석 접속 시간이 끝났어요. 접근번호를 다시 입력해 주세요.")
         return
+    st.button("요청 새로고침", key="sound_desk_refresh", type="tertiary")
     try:
         room,requests=store.desk(room_id)
     except AudioError as exc:
@@ -147,7 +161,7 @@ def desk_live(store,room_id):
             st.markdown(f"**{request['alias']}**")
             st.text(request["body"])
             age=max(0,int(time.time()-request["created_at"]))
-            st.caption(f"{LABELS[request['status']]} · {age//60}분 {age%60}초 전" + (f" · 담당 {request['engineer']}" if request["engineer"] else ""))
+            st.caption(f"{LABELS[request['status']]} · {timestamp(request['created_at'])} 접수" + (f" · 담당 {request['engineer']}" if request["engineer"] else ""))
             if age>120 and request["status"] in {"PENDING","ACK"}:
                 st.warning("시간이 지난 요청입니다. 현재도 필요한 조정인지 확인해 주세요.")
             for reply in request["replies"][-4:]:
@@ -167,7 +181,69 @@ def desk_live(store,room_id):
                     desk_action(store,room_id,request,"release")
 
 
+@st.cache_resource(show_spinner=False)
+def prepare_realtime(database_url, _store):
+    audio_realtime.install(_store)
+    return True
+
+
+@st.fragment
+def live_panel(renderer, store, identity):
+    """Rerun on component events or clicks only; never on a polling timer."""
+    is_desk = renderer is desk_live
+    if is_desk and not engineer_access():
+        st.warning("음향석 접근번호를 다시 입력해 주세요.")
+        return
+    url, key = secret("AUDIO_SUPABASE_URL"), secret("AUDIO_SUPABASE_PUBLISHABLE_KEY")
+    scope = audio_realtime.digest(("desk:" if is_desk else "person:") + identity)
+    if url and key and _realtime_component:
+        try:
+            url = audio_realtime.validate_settings(url,key)
+            prepare_realtime(secret("AUDIO_DATABASE_URL"),store)
+            if st.button("실시간 수신 다시 연결",type="tertiary",key="sound_reconnect"):
+                st.session_state["sound_rt_restart"] = uuid.uuid4().hex
+                st.session_state.pop("sound_rt_auth",None)
+            cached = st.session_state.get("sound_rt_auth",{})
+            valid = cached.get("scope")==scope and cached.get("expires",0)>time.time()
+            event = _realtime_component(url=url,api_key=key,scope=scope,
+                restart=st.session_state.get("sound_rt_restart",""),
+                accepted_token=cached.get("token","") if valid else "",
+                topic=cached.get("topic","") if valid else "",
+                expires=cached.get("expires",0) if valid else 0,
+                key="sound_realtime_events",default=None)
+            if isinstance(event,dict) and event.get("scope")==scope:
+                token=event.get("token","")
+                if event.get("status")=="auth" and (not valid or token!=cached.get("token")):
+                    uid,expires = audio_realtime.verify_browser(url,key,token)
+                    topic,expires = audio_realtime.authorize(store,uid,expires,
+                        participant_token=None if is_desk else identity,
+                        room_id=identity if is_desk else None,
+                        engineer_until=st.session_state.get("sound_engineer_until",0) if is_desk else 0)
+                    st.session_state["sound_rt_auth"]={"scope":scope,"token":token,"topic":topic,"expires":expires}
+                    # Initial handshake / credential renewal only. Ordinary push
+                    # events rerun this fragment without touching the composer.
+                    st.rerun()
+                if event.get("status") in {"error","offline"}:
+                    st.warning("실시간 연결이 끊겼어요. 다시 연결하거나 아래 새로고침으로 확인하세요.")
+                elif event.get("status")=="expired":
+                    st.info("예배방 또는 수신 접속 시간이 끝났어요. 새 예배방으로 입장해 주세요.")
+        except AudioError as exc:
+            flash_error(exc)
+            st.caption("실시간 알림을 연결하지 못했어요. 아래 새로고침으로 확인할 수 있어요.")
+    else:
+        st.info("실시간 알림 설정이 필요해요. 지금은 새로고침을 눌러 요청·답변을 확인하세요.")
+    with st.container(key="sound_live_region"):
+        renderer(store,identity)
+
+
 def audio_page():
+    # Limit Streamlit's stale-element fade override to this live inbox only.
+    # Connection failures remain explicit, with the last successful check time.
+    st.html('''<style>
+    .st-key-sound_live_region [data-stale="true"] {
+        opacity: 1 !important; transition: none !important;
+    }
+    </style>''')
     st.title("음향 요청")
     st.caption("별명으로 요청하고, 음향석의 답변을 확인해요.")
     url=secret("AUDIO_DATABASE_URL")
@@ -235,7 +311,8 @@ def audio_page():
                 st.session_state["sound_clear_epoch"] = uuid.uuid4().hex
                 st.session_state["sound_skip_recovery"] = True
                 st.rerun()
-        participant_live(store,token)
+        participant_controls(store,token)
+        live_panel(participant_live,store,token)
         return
     if not engineer_access():
         pin=secret("AUDIO_ENGINEER_PIN")
@@ -298,4 +375,4 @@ def audio_page():
                 st.rerun()
             except AudioError as exc:
                 flash_error(exc)
-    desk_live(store,room_id)
+    live_panel(desk_live,store,room_id)

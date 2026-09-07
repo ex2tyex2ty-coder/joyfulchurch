@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 
 
 class AudioError(RuntimeError):
@@ -63,22 +63,29 @@ class AudioStore:
     def __init__(self, database_url: str = "", *, test_sqlite_path: str | None = None):
         self.url = database_url
         self.test_path = test_sqlite_path
+        self._pool = None
         if not self.url and not self.test_path:
             raise AudioError("음향 요청 저장소를 먼저 연결해 주세요.")
 
     @contextmanager
     def transaction(self):
         conn = None
+        connections = ExitStack()
         try:
             if self.test_path:
                 conn = sqlite3.connect(self.test_path, timeout=10)
+                connections.callback(conn.close)
                 conn.row_factory = sqlite3.Row
                 conn.execute("PRAGMA foreign_keys=ON")
                 conn.execute("BEGIN IMMEDIATE")
             else:
                 import psycopg
                 from psycopg.rows import dict_row
-                conn = psycopg.connect(self.url, connect_timeout=8, row_factory=dict_row, sslmode="require", prepare_threshold=None)
+                if self._pool is not None:
+                    conn = connections.enter_context(self._pool.connection(timeout=8))
+                else:
+                    conn = psycopg.connect(self.url, connect_timeout=8, row_factory=dict_row, sslmode="require", prepare_threshold=None)
+                    connections.callback(conn.close)
                 conn.execute("SET LOCAL statement_timeout = '8000ms'")
             yield conn
             conn.commit()
@@ -92,8 +99,7 @@ class AudioStore:
             # Never expose database URLs or driver connection errors in public UI.
             raise AudioError(connection_help(exc)) from None
         finally:
-            if conn:
-                conn.close()
+            connections.close()
 
     def sql(self, conn, statement, args=()):
         return conn.execute(statement if self.test_path else statement.replace("?", "%s"), args)
@@ -107,6 +113,20 @@ class AudioStore:
                 # clients. Only the server database role reads these tables.
                 for table in ("sound_rooms","sound_people","sound_requests","sound_replies"):
                     self.sql(conn, f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        if not self.test_path and self._pool is None:
+            try:
+                from psycopg_pool import ConnectionPool
+                from psycopg.rows import dict_row
+                # One bounded pool for the cached store, not per participant.
+                # Setup above validates credentials synchronously first.
+                self._pool = ConnectionPool(
+                    self.url, min_size=1, max_size=4, timeout=8,
+                    max_idle=60, max_lifetime=600, open=True,
+                    kwargs=dict(connect_timeout=8, row_factory=dict_row,
+                                sslmode="require", prepare_threshold=None),
+                )
+            except Exception as exc:
+                raise AudioError(connection_help(exc)) from None
 
     @staticmethod
     def text(value, label, limit):
