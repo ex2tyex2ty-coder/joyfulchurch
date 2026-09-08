@@ -15,6 +15,7 @@ from audio_requests import AudioStore, AudioError
 import audio_realtime
 from audio_profiles import GROUPS, INSTRUMENTS, CUSTOM_INSTRUMENT, selected_instrument, request_groups, request_sender
 from audio_chat_ui import chat_thread
+from config import APP_VERSION
 
 
 _identity_path = Path(__file__).parent / "sound_identity"
@@ -44,11 +45,25 @@ def secret(name):
         return ""
 
 
+def ensure_current_store(store):
+    required=("rooms_for_desk","my_conversation","conversations","conversation_action")
+    if not all(callable(getattr(store,name,None)) for name in required):
+        raise AudioError("[U01] 이전 버전의 음향 기능이 남아 있어요. 최신 ZIP 내부 파일을 모두 업로드한 뒤 Streamlit에서 Reboot해 주세요. 기존 데이터와 Secrets는 지우지 마세요.")
+    return store
+
+
 @st.cache_resource(show_spinner=False)
-def store_for(url):
+def _store_for_version(url, release):
+    # The release participates in the cache key. Previously only the URL did,
+    # so an old AudioStore instance could survive a UI/schema update.
     store = AudioStore(url)
+    ensure_current_store(store)
     store.setup()
     return store
+
+
+def store_for(url):
+    return ensure_current_store(_store_for_version(url,APP_VERSION))
 
 
 def engineer_access():
