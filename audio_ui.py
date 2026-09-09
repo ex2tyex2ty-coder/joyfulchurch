@@ -46,7 +46,7 @@ def secret(name):
 
 
 def ensure_current_store(store):
-    required=("rooms_for_desk","my_conversation","conversations","conversation_action")
+    required=("rooms_for_desk","my_conversation","conversations","conversation_action","delete_room")
     if not all(callable(getattr(store,name,None)) for name in required):
         raise AudioError("[U01] 이전 버전의 음향 기능이 남아 있어요. 최신 ZIP 내부 파일을 모두 업로드한 뒤 Streamlit에서 Reboot해 주세요. 기존 데이터와 Secrets는 지우지 마세요.")
     return store
@@ -68,6 +68,14 @@ def store_for(url):
 
 def engineer_access():
     return float(st.session_state.get("sound_engineer_until",0)) > time.time()
+
+
+def delete_room_as_desk(store, room_id):
+    if not engineer_access():
+        raise AudioError("음향석에 다시 로그인한 뒤 삭제해 주세요.")
+    store.delete_room(room_id,
+        engineer_id=st.session_state.get("sound_engineer_id",""),
+        authenticated_until=st.session_state.get("sound_engineer_until",0))
 
 
 def timestamp(value):
@@ -435,17 +443,22 @@ def audio_page():
                     st.rerun()
                 except (AudioError,ValueError) as exc:
                     flash_error(exc)
-    st.caption("참여자는 방 이름을 선택해 입장해요. 생성 후 12시간 동안 열리며 음향석에서 먼저 종료할 수 있어요.")
+    st.caption("참여자는 방 이름을 선택해 입장해요. 생성 후 12시간 동안 열려요. 방 삭제는 음향석에서만 할 수 있어요.")
+    if st.session_state.pop("sound_room_deleted",False):
+        st.success("예배방과 해당 방의 요청·답변을 삭제했어요.")
     if not rooms:
         return
     room_map={r["id"]:r["label"]+(" · 종료됨" if r["closed"] or r["expires_at"]<=time.time() else "") for r in rooms}
     room_id=st.selectbox("수신할 예배방",list(room_map),format_func=room_map.get)
-    with st.expander("예배방 종료"):
-        confirmed=st.checkbox("현재 방의 미처리 요청도 종료할게요")
-        if st.button("이 예배방 종료",disabled=not confirmed):
+    with st.expander("예배방 삭제"):
+        st.text(f"삭제할 방: {room_map[room_id]}")
+        st.warning("이 방의 참여 정보·요청·답변·보관된 대화를 모두 삭제해요. 복구할 수 없으며, 접속 중인 참여자도 더 이상 요청할 수 없어요.")
+        confirmed=st.checkbox("이 방의 모든 기록을 영구 삭제하는 데 동의해요",key=f"sound_delete_confirm_{room_id}")
+        if st.button("이 예배방 삭제",disabled=not confirmed,key=f"sound_delete_{room_id}",width="stretch"):
             try:
-                store.close_room(room_id)
+                delete_room_as_desk(store,room_id)
                 st.session_state.pop("sound_room_invite",None)
+                st.session_state["sound_room_deleted"]=True
                 st.rerun()
             except AudioError as exc:
                 flash_error(exc)

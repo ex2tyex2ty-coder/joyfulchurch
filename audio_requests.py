@@ -317,6 +317,26 @@ class AudioStore(ConversationStore):
             self.sql(conn,"UPDATE sound_requests SET status=?,updated_at=?,revision=revision+1,engineer=?,engineer_id=? WHERE id=? AND revision=?",(status,time.time(),owner,author_id,request_id,revision))
             self.sql(conn,"INSERT INTO sound_replies(id,request_id,author,body,created_at) VALUES(?,?,?,?,?)",(uuid.uuid4().hex,request_id,engineer,body,time.time()))
 
+    def delete_room(self, room_id, *, engineer_id="", authenticated_until=0):
+        """Server-only operation; authorization comes from the desk session, never widgets."""
+        if not engineer_id or authenticated_until <= time.time():
+            raise AudioError("음향석에 다시 로그인한 뒤 삭제해 주세요.")
+        with self.transaction() as conn:
+            suffix = "" if self.test_path else " FOR UPDATE"
+            room = self.sql(conn,"SELECT id FROM sound_rooms WHERE id=?"+suffix,(room_id,)).fetchone()
+            if not room:
+                return  # Safe retry after a committed deletion.
+            # Existing room-update trigger notifies connected clients at commit.
+            self.sql(conn,"UPDATE sound_rooms SET closed=1 WHERE id=?",(room_id,))
+            receivers = (self.sql(conn,"SELECT name FROM sqlite_master WHERE type='table' AND name='sound_receivers'").fetchone()
+                         if self.test_path else self.sql(conn,"SELECT to_regclass('public.sound_receivers') AS name").fetchone())
+            if receivers and receivers["name"]:
+                self.sql(conn,"DELETE FROM sound_receivers WHERE topic=? OR topic IN (SELECT 'sound:person:' || id FROM sound_people WHERE room_id=?)",("sound:room:"+room_id,room_id))
+            self.sql(conn,"DELETE FROM sound_replies WHERE request_id IN (SELECT id FROM sound_requests WHERE room_id=?)",(room_id,))
+            for table in ("sound_thread_messages","sound_requests","sound_people"):
+                self.sql(conn,f"DELETE FROM {table} WHERE room_id=?",(room_id,))
+            self.sql(conn,"DELETE FROM sound_rooms WHERE id=?",(room_id,))
+
     def close_room(self, room_id):
         with self.transaction() as conn:
             self.room(conn,room_id,active=False)
