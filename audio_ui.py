@@ -15,6 +15,7 @@ from audio_requests import AudioStore, AudioError
 import audio_realtime
 from audio_profiles import GROUPS, INSTRUMENTS, CUSTOM_INSTRUMENT, selected_instrument, request_groups, request_sender
 from audio_chat_ui import chat_thread
+from audio_alerts import desk_alerts
 from config import APP_VERSION
 
 
@@ -215,6 +216,7 @@ def desk_live(store,room_id):
         flash_error(exc)
         return
     closed=bool(room["closed"] or room["expires_at"]<=time.time())
+    desk_alerts(room,threads)
     st.caption(f"{'예배방 종료 · 기록 열람' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
     archived=sum(bool(t["person"].get("desk_archived")) for t in threads)
     st.subheader(f"진행 대화 {len(threads)-archived}명 · 보관 {archived}명")
