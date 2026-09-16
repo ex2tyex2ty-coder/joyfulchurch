@@ -110,6 +110,11 @@ class AudioStore(ConversationStore):
         with self.transaction() as conn:
             for statement in SCHEMA:
                 self.sql(conn, statement)
+            if self.test_path:
+                if "cue_context" not in {r["name"] for r in conn.execute("PRAGMA table_info(sound_requests)")}:
+                    conn.execute("ALTER TABLE sound_requests ADD COLUMN cue_context TEXT NOT NULL DEFAULT ''")
+            else:
+                conn.execute("ALTER TABLE sound_requests ADD COLUMN IF NOT EXISTS cue_context TEXT NOT NULL DEFAULT ''")
             self.sql(conn,"CREATE TABLE IF NOT EXISTS sound_thread_messages (id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES sound_rooms(id), person_id TEXT NOT NULL REFERENCES sound_people(id), author TEXT NOT NULL, author_id TEXT NOT NULL, side TEXT NOT NULL, body TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL)")
             self.sql(conn,"CREATE INDEX IF NOT EXISTS sound_thread_person ON sound_thread_messages(person_id,created_at)")
             if self.test_path:
@@ -133,6 +138,8 @@ class AudioStore(ConversationStore):
                 # clients. Only the server database role reads these tables.
                 for table in ("sound_rooms","sound_people","sound_requests","sound_replies","sound_thread_messages"):
                     self.sql(conn, f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        from cue_store import CueStore
+        CueStore(self).setup()
         if not self.test_path and self._pool is None:
             try:
                 from psycopg_pool import ConnectionPool
@@ -247,6 +254,10 @@ class AudioStore(ConversationStore):
             if last and now-last < 2:
                 raise ValueError("요청을 전달 중이에요. 잠시 뒤 다시 눌러 주세요.")
             self.sql(conn,"INSERT INTO sound_requests(id,room_id,person_id,alias,body,status,created_at,updated_at,location,instrument) VALUES(?,?,?,?,?,'PENDING',?,?,?,?)",(request_id,person["room_id"],person["id"],person["alias"],body,now,now,person["location"],person["instrument"]))
+            from cue_store import request_context
+            context = request_context(self, conn, person["room_id"])
+            if context:
+                self.sql(conn, "UPDATE sound_requests SET cue_context=? WHERE id=?", (context, request_id))
             self.sql(conn,"UPDATE sound_people SET desk_archived=0 WHERE id=?",(person["id"],))
             return request_id
 

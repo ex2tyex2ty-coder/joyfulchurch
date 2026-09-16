@@ -22,6 +22,8 @@ def chat_thread(room, thread, *, desk, act):
                     when=datetime.fromtimestamp(event["created_at"],ZoneInfo("Asia/Seoul")).strftime("%m/%d %H:%M:%S")
                     st.caption(f"{event['author']} · {when}")
                     st.text(event["body"])
+                    if event.get("cue_context"):
+                        st.caption("요청 당시 순서 · "+event["cue_context"])
                     if event.get("status"):
                         st.caption({"PENDING":"전송 완료 · 확인 대기","ACK":"처리 중","DONE":"조치 완료","CLOSED":"확인 완료","CANCELLED":"취소됨","EXPIRED":"예배방 종료"}.get(event["status"],event["status"]))
         if desk:

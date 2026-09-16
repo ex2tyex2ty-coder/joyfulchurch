@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from config import DB_PATH, GOOGLE_CALENDAR_CREDENTIALS_PATH, GOOGLE_CALENDAR_TOKEN_PATH
-from db import transaction
+from db import set_app_meta, transaction
+from time_utils import iso_now_kst
 
 
 READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
@@ -40,7 +41,7 @@ def store_google_events(
                 continue
             if not external_id or not start_date:
                 continue
-            archived_at = datetime.now().isoformat(timespec="seconds") if status == "CANCELLED" else None
+            archived_at = iso_now_kst() if status == "CANCELLED" else None
             conn.execute(
                 "INSERT INTO church_calendar_events("
                 "external_id,calendar_id,title,start_date,end_date,description,location,html_link,source_updated_at,status,archived_at"
@@ -129,6 +130,8 @@ def _sync_with_service(
             break
 
     saved = store_google_events(calendar_id, items, db_path)
+    set_app_meta("last_google_calendar_sync_at", iso_now_kst(), db_path)
+    set_app_meta("last_google_calendar_id", calendar_id, db_path)
     return {"calendar": calendar_title, "received": len(items), "saved": saved}
 
 

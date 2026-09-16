@@ -43,6 +43,7 @@ from bible_lookup import (
 )
 from google_sheets_sync import sync_google_sheets
 from audio_ui import audio_page
+from cue_ui import cue_page
 from board_history import history_items, render_history
 from google_review_board import (
     RESOLUTION_COMMENT_PREFIX,
@@ -1672,6 +1673,7 @@ def sidebar() -> str:
             "예배 인원 현황",
             "팀 확인",
             "음향 요청",
+            "예배 진행",
             "행사",
             "성경 검색",
             "교회력",
@@ -1682,6 +1684,7 @@ def sidebar() -> str:
             "대시보드": "대시보드",
             "팀 확인": "팀 확인",
             "음향 요청": "음향 요청",
+            "예배 진행": "예배 진행",
             "교회력": "교회력",
             "행사": "행사",
             "매뉴얼": "매뉴얼",
@@ -3514,7 +3517,7 @@ def data_page() -> None:
 
 
 def main() -> None:
-    if st.session_state.get("main_nav") != "음향 요청":
+    if st.session_state.get("main_nav") not in {"음향 요청", "예배 진행"}:
         bootstrap()
     nav = sidebar()
     show_flash()
@@ -3522,6 +3525,7 @@ def main() -> None:
         "대시보드": dashboard_page,
         "팀 확인": review_board_page,
         "음향 요청": audio_page,
+        "예배 진행": cue_page,
         "교회력": calendar_page,
         "행사": events_page,
         "매뉴얼": manuals_page,

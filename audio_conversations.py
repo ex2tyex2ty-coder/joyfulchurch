@@ -8,7 +8,7 @@ def conversation(person, requests, messages):
     events=[]
     for request in requests:
         events.append(dict(id="request:"+request["id"],created_at=request["created_at"],
-            author=request["alias"],body=request["body"],side="participant",status=request["status"]))
+            author=request["alias"],body=request["body"],side="participant",status=request["status"],cue_context=request.get("cue_context","")))
         for index,reply in enumerate(request["replies"]):
             events.append(dict(id=f"legacy:{request['id']}:{index}",created_at=reply["created_at"],
                 author=reply["author"],body=reply["body"],side="legacy"))
