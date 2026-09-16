@@ -86,7 +86,7 @@ from migration import migrate
 from time_utils import today_kst
 
 
-st.set_page_config(page_title=APP_TITLE, page_icon="⛪", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title=APP_TITLE, page_icon="⛪", layout="wide", initial_sidebar_state="collapsed")
 
 # Match charts to the same Joyful Church brand palette.
 px.defaults.template = "plotly_white"
@@ -162,8 +162,7 @@ a { color:#B95000; }
 [data-testid="stSidebarCollapseButton"] button,
 [data-testid="stSidebarCollapsedControl"] button,
 [data-testid="collapsedControl"] button,
-button[data-testid="stExpandSidebarButton"],
-button[data-testid="stBaseButton-headerNoPadding"] {
+button[data-testid="stExpandSidebarButton"] {
   -webkit-appearance:none !important; appearance:none !important; color-scheme:light !important;
   background:var(--brand) !important; background-image:none !important;
   color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
@@ -174,8 +173,7 @@ button[data-testid="stBaseButton-headerNoPadding"] {
 [data-testid="stSidebarCollapseButton"] button *,
 [data-testid="stSidebarCollapsedControl"] button *,
 [data-testid="collapsedControl"] button *,
-button[data-testid="stExpandSidebarButton"] *,
-button[data-testid="stBaseButton-headerNoPadding"] * {
+button[data-testid="stExpandSidebarButton"] * {
   color:var(--text) !important; -webkit-text-fill-color:var(--text) !important;
   fill:var(--text) !important; stroke:var(--text) !important; opacity:1 !important;
 }
@@ -344,16 +342,15 @@ hr { border-color:var(--line) !important; }
 }
 @media (max-width:768px) {
   [data-testid="stMainBlockContainer"] { padding:3.2rem 1rem 4rem !important; }
-  [data-testid="stSidebar"] { width:88vw !important; min-width:88vw !important; max-width:360px !important; }
-  [data-testid="stSidebar"] > div:first-child, [data-testid="stSidebar"] [data-testid="stSidebarContent"] { width:100% !important; }
-  [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding:1rem .65rem 1.5rem !important; }
-  [data-testid="stSidebar"] h2 { font-size:.92rem !important; white-space:nowrap; }
-  [data-testid="stSidebar"] [role="radiogroup"] p { font-size:18px !important; }
-  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:56px !important; padding:.65rem !important; }
+  [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+  [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"],
+  button[data-testid="stExpandSidebarButton"] { display:none !important; width:0 !important; min-width:0 !important; max-width:0 !important; pointer-events:none !important; }
+  [data-testid="stMain"] { width:100% !important; min-width:0 !important; margin-left:0 !important; }
+  [data-testid="stMainBlockContainer"] { width:100% !important; max-width:100% !important; box-sizing:border-box !important; }
   [data-testid="stDialog"] [role="dialog"] { width:94vw !important; max-width:94vw !important; max-height:90dvh !important; overflow-y:auto !important; }
   .st-key-full_menu_items button { min-height:64px !important; }
   .st-key-full_menu_items button p { font-size:18px !important; }
-  .st-key-public_navigation { position:sticky; top:2.8rem; z-index:99; background:white; padding:.4rem 0; border-bottom:1px solid #ddd; }
+  .st-key-public_navigation { background:white; padding:.2rem 0; border-bottom:1px solid #eee; }
   .ops-hero { padding:.05rem 0 .45rem; margin-bottom:1rem; }
   .ops-hero h1, .ops-dashboard-head h1 { font-size:1.52rem !important; }
   .ops-hero p { font-size:.9rem; }
@@ -426,6 +423,18 @@ hr { border-color:var(--line) !important; }
   -webkit-text-fill-color:#191F28 !important; caret-color:#191F28 !important;
 }
 [data-baseweb="select"] svg { color:#4E5968 !important; fill:currentColor !important; }
+/* Streamlit 1.61 uses React Aria selects, not BaseWeb. Keep saved dark themes readable. */
+[data-testid="stSelectbox"] [role="group"],
+[data-testid="stMultiSelect"] [role="group"] {
+  background:#FFFFFF !important; color:#191F28 !important;
+  border:1px solid #D1D6DB !important; border-radius:10px !important;
+}
+[data-testid="stSelectbox"] input, [data-testid="stSelectbox"] button,
+[data-testid="stMultiSelect"] input, [data-testid="stMultiSelect"] button {
+  background:transparent !important; color:#191F28 !important;
+  -webkit-text-fill-color:#191F28 !important;
+}
+[data-testid="stSelectbox"] svg, [data-testid="stMultiSelect"] svg { fill:#4E5968 !important; }
 [data-baseweb="select"]:focus-within > div {
   border-color:#B95000 !important; box-shadow:0 0 0 3px #FFF1E3 !important;
 }
@@ -1306,44 +1315,46 @@ def shared_review_board() -> None:
         return
     counts = {status: int(snapshot["counts"].get(status, 0)) for status in REVIEW_STATUS_LABELS}
     active_count = counts["REVIEW_REQUIRED"] + counts["IN_PROGRESS"]
-    current_month = today_kst().strftime("%Y-%m")
-    resolution_comments = find_resolution_comments(snapshot.get("raw_comments", []))
-    resolved_this_month = len(
-        find_resolution_comments(snapshot.get("raw_comments", []), current_month)
-    )
-    overdue_count = sum(
-        1 for item in snapshot["items"]
-        if item.get("status") != "CONFIRMED" and item.get("due_date") and str(item["due_date"]) < today_kst().isoformat()
-    )
-    recurring_items = [item for item in snapshot["items"] if item.get("category") == "반복 이슈"]
-    standard_issue_ids = {
-        str(item["id"])
-        for item in recurring_items
-        if any(
-            str(comment.get("body") or "").startswith("[기준 확정]")
-            for comment in snapshot["comments"].get(str(item["id"]), [])
-        )
-    }
-
-    st.markdown(f"#### 팀 확인 게시판 · 미완료 {active_count}건")
-    st.caption("게시글·댓글·진행 상태는 게시판 전용 Google Sheets에 영구 저장돼요.")
-
-    metrics = [
-        ("확인 필요", counts["REVIEW_REQUIRED"]),
-        ("진행중", counts["IN_PROGRESS"]),
-        ("기한 지남", overdue_count),
-        ("이번 달 해결", resolved_this_month),
-    ]
-    st.markdown(
-        '<div class="review-stat-grid">'
-        + "".join(
-            f'<div class="review-stat"><div class="label">{label}</div><div class="value">{value}건</div></div>'
-            for label, value in metrics
-        )
-        + "</div>",
-        unsafe_allow_html=True,
-    )
-    st.caption("기한 지남은 미완료 항목에 포함돼요. 이번 달 해결은 처리 횟수이며, 다시 해결하면 한 번 더 집계해요.")
+    st.caption(f"미완료 {active_count}건 · 제목을 누르면 내용과 댓글을 볼 수 있습니다.")
+    if st.button("＋ 글쓰기", key="open_review_item_form", type="primary", width="stretch"):
+        st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
+    if st.session_state.get("show_review_item_form", False):
+        with st.form("new_review_item", clear_on_submit=True, border=True):
+            st.markdown("**새 확인사항 등록**")
+            new_title = st.text_input("제목", placeholder="무엇을 확인해야 하나요?")
+            new_description = st.text_area("내용", placeholder="상황과 확인할 내용을 적어주세요.")
+            classify_col, priority_col = st.columns(2)
+            new_category = classify_col.selectbox("분류", REVIEW_CATEGORIES)
+            new_priority = priority_col.selectbox(
+                "중요도",
+                list(REVIEW_PRIORITY_LABELS),
+                format_func=lambda value: REVIEW_PRIORITY_LABELS[value],
+            )
+            owner_col, due_col = st.columns(2)
+            new_owner = owner_col.text_input("담당자", placeholder="미정이면 비워두세요")
+            new_due = due_col.date_input("확인 기한", value=None)
+            new_author = st.text_input(
+                "작성자",
+                value=st.session_state.get("operator_name", ""),
+                placeholder="이름",
+            )
+            submitted = st.form_submit_button("등록", type="primary", width="stretch")
+            if submitted:
+                try:
+                    store.create_item(
+                        new_title,
+                        new_description,
+                        new_author,
+                        new_category,
+                        new_priority,
+                        new_owner,
+                        new_due.isoformat() if new_due else "",
+                    )
+                    _cached_review_board_snapshot.clear()
+                    st.session_state["show_review_item_form"] = False
+                    rerun("새 확인사항을 등록했습니다.")
+                except (ValueError, ReviewBoardConnectionError) as exc:
+                    st.error(str(exc))
     if st.button("↻ 목록 새로고침", key="refresh_review_board", type="tertiary", width="content"):
         last_refresh = float(st.session_state.get("_last_review_refresh") or 0)
         if time.time() - last_refresh >= 5:
@@ -1352,37 +1363,6 @@ def shared_review_board() -> None:
             st.rerun()
         else:
             st.caption("방금 새로고침했어요. 잠시 뒤 다시 확인해 주세요.")
-    if counts["CONFIRMED"]:
-        if st.button(
-            f"확인 완료 {counts['CONFIRMED']}건 정리하기",
-            key="show_confirmed_review_items",
-            type="secondary",
-            width="stretch",
-        ):
-            st.session_state["review_status_filter"] = "확인 완료"
-            st.rerun()
-
-    # Resolution history and current standards have dedicated, searchable views.
-
-    issue_col, standard_col = st.columns(2)
-    if issue_col.button(
-        f"반복 이슈 {len(recurring_items)}건",
-        key="show_recurring_review_items",
-        width="stretch",
-        disabled=not recurring_items,
-    ):
-        st.session_state["review_category_filter"] = "반복 이슈"
-        st.session_state["review_status_filter"] = "전체 상태"
-        st.rerun()
-    if standard_col.button(
-        f"확정 기준 {len(history_items(snapshot, standards_only=True))}건",
-        key="show_review_standards",
-        width="stretch",
-        disabled=not history_items(snapshot, standards_only=True),
-    ):
-        st.session_state["_open_board_standards"] = True
-        st.rerun()
-
     board_search = st.text_input(
         "게시판·확정 기준 검색",
         placeholder="에어컨, 온도, 본당처럼 기억나는 단어를 입력하세요",
@@ -1460,7 +1440,7 @@ def shared_review_board() -> None:
         is_recurring_issue = item.get("category") == "반복 이슈"
         repeat_label = f" · 반복 {1 + len(repeat_comments)}회" if is_recurring_issue else ""
         with st.expander(
-            f"[{label}] {item['title']} · {item.get('category') or '기타'}{repeat_label} · 댓글 {item['comment_count']}개",
+            f"[{label}] {item['title']} · 댓글 {item['comment_count']}",
             expanded=st.session_state.get("expanded_review_item") == str(item["id"]),
         ):
             tone = "danger" if item.get("priority") == "URGENT" else ("warn" if item.get("priority") == "HIGH" else "")
@@ -1557,60 +1537,6 @@ def shared_review_board() -> None:
                 review_resolve_dialog(store, item)
 
     section_gap()
-    st.caption("누구나 새 확인사항과 댓글을 남길 수 있어요. 작성자 이름을 함께 적어 주세요.")
-    recurring_col, general_col = st.columns(2)
-    if recurring_col.button(
-        "＋ 반복 이슈 기록",
-        key="open_recurring_issue_form",
-        type="primary",
-        width="stretch",
-    ):
-        recurring_issue_create_dialog(store)
-    if general_col.button(
-        "＋ 일반 확인사항",
-        key="open_review_item_form",
-        type="secondary",
-        width="stretch",
-    ):
-        st.session_state["show_review_item_form"] = not st.session_state.get("show_review_item_form", False)
-
-    if st.session_state.get("show_review_item_form", False):
-        with st.form("new_review_item", clear_on_submit=True, border=True):
-            st.markdown("**새 확인사항 등록**")
-            new_title = st.text_input("제목", placeholder="무엇을 확인해야 하나요?")
-            new_description = st.text_area("내용", placeholder="상황과 확인할 내용을 적어주세요.")
-            classify_col, priority_col = st.columns(2)
-            new_category = classify_col.selectbox("분류", REVIEW_CATEGORIES)
-            new_priority = priority_col.selectbox(
-                "중요도",
-                list(REVIEW_PRIORITY_LABELS),
-                format_func=lambda value: REVIEW_PRIORITY_LABELS[value],
-            )
-            owner_col, due_col = st.columns(2)
-            new_owner = owner_col.text_input("담당자", placeholder="미정이면 비워두세요")
-            new_due = due_col.date_input("확인 기한", value=None)
-            new_author = st.text_input(
-                "작성자",
-                value=st.session_state.get("operator_name", ""),
-                placeholder="이름",
-            )
-            submitted = st.form_submit_button("등록", type="primary", width="stretch")
-            if submitted:
-                try:
-                    store.create_item(
-                        new_title,
-                        new_description,
-                        new_author,
-                        new_category,
-                        new_priority,
-                        new_owner,
-                        new_due.isoformat() if new_due else "",
-                    )
-                    _cached_review_board_snapshot.clear()
-                    st.session_state["show_review_item_form"] = False
-                    rerun("새 확인사항을 등록했습니다.")
-                except (ValueError, ReviewBoardConnectionError) as exc:
-                    st.error(str(exc))
 
     if has_access("ADMIN"):
         board_admin = st.expander("게시판 데이터 관리")
@@ -1758,9 +1684,9 @@ def sidebar() -> str:
         if quick_submitted and quick.strip():
             st.session_state["search_term"] = quick.strip()
             navigate("전체 검색")
-        if str(st.session_state.get("_secondary_nav") or nav) != "예배 진행":
+        if str(st.session_state.get("_secondary_nav") or nav) != "예배 진행" and not st.session_state.get("_show_inline_access"):
             access_control()
-        if has_access("TEAM"):
+        if has_access("TEAM") and not st.session_state.get("_show_inline_access") and nav != "예배 진행":
             with st.expander("내 이름 설정"):
                 st.text_input(
                     "게시판 작성자 이름",
@@ -1774,7 +1700,7 @@ def sidebar() -> str:
 
 
 def review_board_page() -> None:
-    hero("팀 확인", "확인할 일과 진행 상황을 한곳에서 나눠 봐요.")
+    st.title("팀 게시판")
     shared_review_board()
 
 
@@ -3534,6 +3460,10 @@ def close_full_menu():
 def full_menu():
     st.caption("보고 싶은 메뉴를 누르면 해당 화면으로 이동합니다.")
     with st.container(key="full_menu_items"):
+        if st.button("팀원 로그인 · 내 정보", key="menu_access", width="stretch"):
+            st.session_state["_show_inline_access"] = True
+            close_full_menu()
+            st.rerun()
         groups = [
             ("누구나 보기", [("대시보드", "첫 화면"), ("큐시트", "찬양·본문·예배 순서"), ("주보", "교회 주보 · 준비 중"), ("성경 검색", "말씀 찾아보기")]),
             ("예배 참여·담당자", [("음향 요청", "음향 담당자에게 요청"), ("예배 진행", "담당자 로그인 · 공동 진행"), ("예배 인원 현황", "출석 인원 확인"), ("팀 확인", "팀 준비 사항")]),
@@ -3568,9 +3498,14 @@ def main() -> None:
             if st.button(f"{page} · {description}", key="public_home_"+page, width="stretch"):
                 navigate(page)
     show_flash()
-    if nav == "예배 진행":
+    if nav == "예배 진행" or st.session_state.get("_show_inline_access"):
         st.caption("공개 예배 순서는 ‘큐시트’에서 로그인 없이 볼 수 있습니다. 공동 진행은 아래 접근 권한에서 로그인하세요.")
         access_control()
+        if has_access("TEAM"):
+            st.text_input("게시판 작성자 이름", key="operator_name")
+        if st.session_state.get("_show_inline_access") and st.button("로그인 영역 닫기"):
+            st.session_state["_show_inline_access"] = False
+            st.rerun()
     pages = {
         "대시보드": dashboard_page,
         "큐시트": public_cue_page,
