@@ -117,7 +117,7 @@ def cue_page():
     try:
         auth = credentials()
     except AudioError:
-        st.info("왼쪽 메뉴에서 팀원으로 로그인하거나, 음향 요청에서 음향석에 로그인해 주세요.")
+        st.info("공동 진행은 위 ‘접근 권한’에서 팀원으로 로그인해 주세요. 찬양·본문·순서만 보려면 전체 메뉴의 ‘큐시트’를 이용하세요. 음향석 로그인도 사용할 수 있습니다.")
         return
     if not secret("AUDIO_DATABASE_URL"):
         st.warning("준비·진행 상태 저장에는 기존 음향 저장소 연결이 필요해요. AUDIO_DATABASE_URL을 확인하세요.")

@@ -44,6 +44,7 @@ from bible_lookup import (
 from google_sheets_sync import sync_google_sheets
 from audio_ui import audio_page
 from cue_ui import cue_page
+from public_worship import public_cue_page, bulletin_page
 from board_history import history_items, render_history
 from google_review_board import (
     RESOLUTION_COMMENT_PREFIX,
@@ -343,12 +344,16 @@ hr { border-color:var(--line) !important; }
 }
 @media (max-width:768px) {
   [data-testid="stMainBlockContainer"] { padding:3.2rem 1rem 4rem !important; }
-  [data-testid="stSidebar"] { width:min(11.5rem,48vw) !important; min-width:min(11.5rem,48vw) !important; max-width:min(11.5rem,48vw) !important; }
+  [data-testid="stSidebar"] { width:88vw !important; min-width:88vw !important; max-width:360px !important; }
   [data-testid="stSidebar"] > div:first-child, [data-testid="stSidebar"] [data-testid="stSidebarContent"] { width:100% !important; }
   [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] { padding:1rem .65rem 1.5rem !important; }
   [data-testid="stSidebar"] h2 { font-size:.92rem !important; white-space:nowrap; }
-  [data-testid="stSidebar"] [role="radiogroup"] p { font-size:.86rem !important; }
-  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:44px !important; padding:.42rem .3rem !important; }
+  [data-testid="stSidebar"] [role="radiogroup"] p { font-size:18px !important; }
+  [data-testid="stSidebar"] [role="radiogroup"] label { min-height:56px !important; padding:.65rem !important; }
+  [data-testid="stDialog"] [role="dialog"] { width:94vw !important; max-width:94vw !important; max-height:90dvh !important; overflow-y:auto !important; }
+  .st-key-full_menu_items button { min-height:64px !important; }
+  .st-key-full_menu_items button p { font-size:18px !important; }
+  .st-key-public_navigation { position:sticky; top:2.8rem; z-index:99; background:white; padding:.4rem 0; border-bottom:1px solid #ddd; }
   .ops-hero { padding:.05rem 0 .45rem; margin-bottom:1rem; }
   .ops-hero h1, .ops-dashboard-head h1 { font-size:1.52rem !important; }
   .ops-hero p { font-size:.9rem; }
@@ -1670,6 +1675,8 @@ def sidebar() -> str:
         st.markdown("---")
         primary_menu_items = [
             "대시보드",
+            "큐시트",
+            "주보",
             "예배 인원 현황",
             "팀 확인",
             "음향 요청",
@@ -1681,6 +1688,8 @@ def sidebar() -> str:
         ]
         secondary_menu_items = ["매뉴얼", "결정·운영로그", "보관함", "데이터·백업"]
         menu_labels = {
+            "큐시트": "큐시트",
+            "주보": "주보",
             "대시보드": "대시보드",
             "팀 확인": "팀 확인",
             "음향 요청": "음향 요청",
@@ -1749,7 +1758,8 @@ def sidebar() -> str:
         if quick_submitted and quick.strip():
             st.session_state["search_term"] = quick.strip()
             navigate("전체 검색")
-        access_control()
+        if str(st.session_state.get("_secondary_nav") or nav) != "예배 진행":
+            access_control()
         if has_access("TEAM"):
             with st.expander("내 이름 설정"):
                 st.text_input(
@@ -3516,13 +3526,55 @@ def data_page() -> None:
             )
 
 
+def close_full_menu():
+    st.session_state["_full_menu_open"] = False
+
+
+@st.dialog("전체 메뉴", width="large", on_dismiss=close_full_menu)
+def full_menu():
+    st.caption("보고 싶은 메뉴를 누르면 해당 화면으로 이동합니다.")
+    with st.container(key="full_menu_items"):
+        groups = [
+            ("누구나 보기", [("대시보드", "첫 화면"), ("큐시트", "찬양·본문·예배 순서"), ("주보", "교회 주보 · 준비 중"), ("성경 검색", "말씀 찾아보기")]),
+            ("예배 참여·담당자", [("음향 요청", "음향 담당자에게 요청"), ("예배 진행", "담당자 로그인 · 공동 진행"), ("예배 인원 현황", "출석 인원 확인"), ("팀 확인", "팀 준비 사항")]),
+            ("자료·관리", [("행사", "교회 행사"), ("교회력", "예배 일정"), ("매뉴얼", "운영 안내"), ("전체 검색", "자료 찾기"), ("보관함", "보관 자료"), ("데이터·백업", "데이터 관리")]),
+        ]
+        if has_access("TEAM"):
+            groups[-1][1].append(("결정·운영로그", "운영 기록"))
+        for title, entries in groups:
+            st.subheader(title)
+            for page, description in entries:
+                if st.button(f"{page} — {description}", key="full_menu_"+page, width="stretch"):
+                    close_full_menu()
+                    navigate(page)
+        if st.button("닫기 ✕", width="stretch"):
+            close_full_menu()
+            st.rerun()
+
+
 def main() -> None:
-    if st.session_state.get("main_nav") not in {"음향 요청", "예배 진행"}:
+    if st.session_state.get("_navigate_to", st.session_state.get("main_nav")) not in {"음향 요청", "예배 진행", "큐시트", "주보"}:
         bootstrap()
     nav = sidebar()
+    with st.container(key="public_navigation"):
+        if st.button("☰ 전체 메뉴", key="open_full_menu", width="stretch"):
+            st.session_state["_full_menu_open"] = True
+        if st.session_state.get("_full_menu_open"):
+            full_menu()
+        st.caption(f"현재 화면 · {nav}")
+    if nav == "대시보드":
+        st.subheader("예배 바로가기")
+        for page, description in [("큐시트", "찬양·본문·순서 보기"), ("주보", "교회 주보 보기"), ("음향 요청", "음향 담당자에게 요청")]:
+            if st.button(f"{page} · {description}", key="public_home_"+page, width="stretch"):
+                navigate(page)
     show_flash()
+    if nav == "예배 진행":
+        st.caption("공개 예배 순서는 ‘큐시트’에서 로그인 없이 볼 수 있습니다. 공동 진행은 아래 접근 권한에서 로그인하세요.")
+        access_control()
     pages = {
         "대시보드": dashboard_page,
+        "큐시트": public_cue_page,
+        "주보": bulletin_page,
         "팀 확인": review_board_page,
         "음향 요청": audio_page,
         "예배 진행": cue_page,
