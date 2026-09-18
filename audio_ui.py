@@ -71,6 +71,31 @@ def engineer_access():
     return float(st.session_state.get("sound_engineer_until",0)) > time.time()
 
 
+@st.fragment(run_every=5)
+def cross_page_sound_alerts():
+    """Opt-in desk-only polling outside the sound page; no participant reads."""
+    room_id = st.session_state.get("sound_monitor_room")
+    if not room_id or not st.session_state.get("sound_monitor_enabled", False):
+        return
+    if not engineer_access():
+        st.warning("음향석 로그인이 만료되어 무음 알림 수신이 중단됐어요. 음향 요청에서 다시 로그인해 주세요.")
+        return
+    try:
+        url = secret("AUDIO_DATABASE_URL")
+        if not url:
+            raise AudioError("음향 저장소 설정을 확인해 주세요.")
+        store = store_for(url)
+        room, threads = store.conversations(room_id)
+        if room["closed"] or room["expires_at"] <= time.time():
+            st.info("알림 수신 방이 종료됐어요. 음향 요청에서 새 수신 방을 선택해 주세요.")
+            return
+    except AudioError:
+        st.warning("음향 알림 연결을 확인하지 못했습니다. 수신이 지연될 수 있어요. 음향 요청 화면에서 확인해 주세요.")
+        return
+    st.caption(f"무음 알림 수신 중 · {room['label']} · 이 화면이 열린 동안 약 5초마다 확인")
+    desk_alerts(room, threads)
+
+
 def delete_room_as_desk(store, room_id):
     if not engineer_access():
         raise AudioError("음향석에 다시 로그인한 뒤 삭제해 주세요.")
@@ -428,6 +453,8 @@ def audio_page():
     st.caption(f"음향석 · {st.session_state['sound_engineer_name']} · 접속 후 12시간 유지")
     if st.button("음향석 로그아웃"):
         st.session_state["sound_engineer_until"]=0
+        st.session_state["sound_monitor_enabled"]=False
+        st.session_state.pop("sound_monitor_choice", None)
         st.rerun()
     try:
         rooms=store.rooms_for_desk()
@@ -451,7 +478,15 @@ def audio_page():
     if not rooms:
         return
     room_map={r["id"]:r["label"]+(" · 종료됨" if r["closed"] or r["expires_at"]<=time.time() else "") for r in rooms}
-    room_id=st.selectbox("수신할 예배방",list(room_map),format_func=room_map.get)
+    room_ids = list(room_map)
+    previous_room = st.session_state.get("sound_monitor_room")
+    room_id=st.selectbox("수신할 예배방",room_ids,format_func=room_map.get,
+                        index=room_ids.index(previous_room) if previous_room in room_ids else 0,
+                        key="sound_desk_room_select")
+    st.session_state["sound_monitor_room"] = room_id
+    st.session_state["sound_monitor_enabled"] = st.toggle(
+        "다른 메뉴에서도 무음 알림 받기", value=st.session_state.get("sound_monitor_enabled", False),
+        key="sound_monitor_choice", help="음향석 로그인과 선택한 방이 유효한 동안 5초마다 확인합니다. 브라우저 종료·절전 중 알림은 보장하지 않습니다.")
     with st.expander("예배방 삭제"):
         st.text(f"삭제할 방: {room_map[room_id]}")
         st.warning("이 방의 참여 정보·요청·답변·보관된 대화를 모두 삭제해요. 복구할 수 없으며, 접속 중인 참여자도 더 이상 요청할 수 없어요.")

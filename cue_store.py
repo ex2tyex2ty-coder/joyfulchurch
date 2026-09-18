@@ -40,6 +40,7 @@ class CueStore:
             if row["controller"] == actor:
                 self.db.sql(conn, "UPDATE cue_sessions SET lease=? WHERE id=? AND controller=?",
                             (min(expires, time.time()+90), sid, actor))
+                result["lease"] = min(expires, time.time()+90)
             return result
 
     def create(self, plan, actor, expires):

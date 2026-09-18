@@ -12,12 +12,15 @@ from urllib.request import Request, urlopen
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from bible_lookup import extract_bible_references
 
 SOURCES = {
     "주일예배": "1baPrJ5Tg12g8SPK8FTz6d_RnGn-MIX6T3YWxcwg-Hqc",
     "금요집회": "1L1401SkPbj3FBb0YwJXA7pTnx31QVVXIydzKX1vyhOo",
 }
 DATE = re.compile(r"(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+ORDER_LABELS = {"카운트다운영상", "사도신경", "대표기도", "광고", "교회소식", "성경봉독", "설교", "말씀",
+                "설교전영상", "설교후찬양", "기도회", "봉헌", "봉헌&기도", "봉헌기도", "헌금", "축도", "축도송", "주기도문"}
 
 
 def norm(value):
@@ -99,8 +102,20 @@ def parse_workbook(data, kind):
                     except ValueError:
                         pass
                     # Continuation rows belong to their cue, not a new clock event.
-                    if not owner and items and items[-1]["kind"] in {"본문", "설교 후 찬양", "기도회"}:
+                    # Some source formulas also fill the time on a detail row.
+                    # Only recognize an explicit verse/quoted song in that case;
+                    # a timed, unnamed-owner cue is otherwise a separate event.
+                    timed_detail = bool(items and not items[-1]["body"] and (
+                        (items[-1]["kind"] == "본문" and extract_bible_references(body, limit=1))
+                        or (items[-1]["kind"] == "설교 후 찬양" and
+                            any(body.startswith(a) and body.endswith(b) for a,b in (("“","”"), ('"','"'), ("‘","’"), ("「","」"))))))
+                    if (not owner and (not base["time"] or timed_detail) and not base["duration"]
+                            and norm(body) not in ORDER_LABELS and items
+                            and items[-1]["kind"] in {"본문", "설교 후 찬양", "기도회"}):
                         items[-1]["body"] += ("\n" if items[-1]["body"] else "") + body
+                        for field in ("sound", "screen", "light", "stage", "notes"):
+                            if base[field] and base[field] != items[-1][field]:
+                                items[-1][field] = (items[-1][field]+"\n"+base[field]).strip()
                         continue
                     if norm(body) == "성경봉독":
                         category, title, content = "본문", "성경봉독", ""

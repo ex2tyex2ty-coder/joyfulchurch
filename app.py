@@ -42,7 +42,7 @@ from bible_lookup import (
     parse_local_bible,
 )
 from google_sheets_sync import sync_google_sheets
-from audio_ui import audio_page
+from audio_ui import audio_page, cross_page_sound_alerts
 from cue_ui import cue_page
 from public_worship import public_cue_page, bulletin_page
 from board_history import history_items, render_history
@@ -1056,7 +1056,8 @@ def access_control() -> None:
                 st.session_state.pop("_access_expires_at", None)
                 st.session_state["_clear_access_pin"] = True
                 rerun("일반 열람 모드로 전환했습니다.")
-            return
+            remaining = max(0, math.ceil((float(st.session_state.get("_access_expires_at", 0))-time.time())/60))
+            st.caption(f"남은 시간 약 {remaining}분 · 아래에서 접근번호로 재인증하면 1시간 연장됩니다.")
         if not team_pin and not admin_pin:
             st.caption("접근번호가 설정되지 않아 안전한 읽기 전용으로 열립니다.")
             return
@@ -1079,7 +1080,7 @@ def access_control() -> None:
             label_visibility="collapsed",
             disabled=locked,
         )
-        if st.button("권한 확인", key="access_login", type="primary", width="stretch", disabled=locked):
+        if st.button("권한 확인" if role == "VIEWER" else "재인증 · 1시간 연장", key="access_login", type="primary", width="stretch", disabled=locked):
             if admin_pin and hmac.compare_digest(str(entered or ""), admin_pin):
                 st.session_state["_access_role"] = "ADMIN"
                 st.session_state["_access_expires_at"] = time.time() + ACCESS_SESSION_SECONDS
@@ -1188,6 +1189,8 @@ def review_resolve_dialog(
             placeholder="예: 냉방 시작 시간을 30분 앞당김",
         )
         if st.form_submit_button("해결하고 보관", type="primary", width="stretch"):
+            if not access_required("TEAM", "해결·보관"):
+                return
             try:
                 store.resolve_and_archive_item(
                     str(item["id"]),
@@ -1237,6 +1240,8 @@ def recurring_issue_repeat_dialog(store: GoogleReviewBoardStore, item: dict[str,
             placeholder="이름",
         )
         if st.form_submit_button("또 발생으로 기록", type="primary", width="stretch"):
+            if not access_required("TEAM", "반복 발생 기록"):
+                return
             body = "[또 발생]" + (f"\n{note.strip()}" if note.strip() else "")
             try:
                 store.add_comment(str(item["id"]), author, body, "IN_PROGRESS")
@@ -1263,6 +1268,8 @@ def recurring_issue_standard_dialog(store: GoogleReviewBoardStore, item: dict[st
             placeholder="이름 또는 회의명",
         )
         if st.form_submit_button("기준 확정", type="primary", width="stretch"):
+            if not access_required("TEAM", "운영 기준 확정"):
+                return
             if not standard.strip():
                 st.error("앞으로 적용할 기준을 한 문장으로 적어 주세요.")
                 return
@@ -1617,7 +1624,7 @@ def sidebar() -> str:
             "큐시트": "큐시트",
             "주보": "주보",
             "대시보드": "대시보드",
-            "팀 확인": "팀 확인",
+            "팀 확인": "팀 게시판",
             "음향 요청": "음향 요청",
             "예배 진행": "예배 진행",
             "교회력": "교회력",
@@ -3474,7 +3481,10 @@ def full_menu():
         for title, entries in groups:
             st.subheader(title)
             for page, description in entries:
-                if st.button(f"{page} — {description}", key="full_menu_"+page, width="stretch"):
+                if page in {"보관함", "데이터·백업"} and not has_access("ADMIN"):
+                    continue
+                display_page = "팀 게시판" if page == "팀 확인" else page
+                if st.button(f"{display_page} — {description}", key="full_menu_"+page, width="stretch"):
                     close_full_menu()
                     navigate(page)
         if st.button("닫기 ✕", width="stretch"):
@@ -3486,12 +3496,14 @@ def main() -> None:
     if st.session_state.get("_navigate_to", st.session_state.get("main_nav")) not in {"음향 요청", "예배 진행", "큐시트", "주보"}:
         bootstrap()
     nav = sidebar()
+    if nav != "음향 요청" and st.session_state.get("sound_monitor_enabled") and st.session_state.get("sound_monitor_room"):
+        cross_page_sound_alerts()
     with st.container(key="public_navigation"):
         if st.button("☰ 전체 메뉴", key="open_full_menu", width="stretch"):
             st.session_state["_full_menu_open"] = True
         if st.session_state.get("_full_menu_open"):
             full_menu()
-        st.caption(f"현재 화면 · {nav}")
+        st.caption(f"현재 화면 · {'팀 게시판' if nav == '팀 확인' else nav}")
     if nav == "대시보드":
         st.subheader("예배 바로가기")
         for page, description in [("큐시트", "찬양·본문·순서 보기"), ("주보", "교회 주보 보기"), ("음향 요청", "음향 담당자에게 요청")]:

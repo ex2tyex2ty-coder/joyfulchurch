@@ -2,7 +2,6 @@
 import time
 import uuid
 import copy
-from datetime import date
 from html import escape
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from audio_ui import secret, store_for
 from bible_lookup import extract_bible_references, fetch_local_bible_verse, parse_local_bible
 from cue_source import SOURCES, differences, download, offline_html
 from cue_store import CueStore, ROLES, authorize
+from time_utils import today_kst
 
 
 def credentials():
@@ -156,7 +156,7 @@ def cue_page():
                 format_func=lambda i:options[i]["title"]+" · "+options[i]["sheet"]+" · "+options[i]["area"])
             plan = options[selected]
             st.caption("불러온 시각: "+st.session_state.get("cue_imported_at", ""))
-            if plan["date"] < date.today().isoformat():
+            if plan["date"] < today_kst().isoformat():
                 st.warning("지난 날짜의 큐시트입니다. 이번 예배에 사용할 자료가 맞는지 확인하세요.")
             for warning in plan["warnings"]:
                 st.caption(warning)
@@ -195,6 +195,8 @@ def cue_live(store, sid):
     if feedback:
         (st.success if feedback[0] else st.error)(feedback[1])
     state = row["state"]
+    if auth[1] - time.time() < 600:
+        st.warning("담당자 로그인 만료가 10분 이내입니다. 위 ‘접근 권한’에서 접근번호로 재인증해 주세요. 음향석으로 접속했다면 음향 요청에서 다시 로그인하세요.")
     plan = state["plan"]
     items = plan["items"]
     ids = [i["id"] for i in items]

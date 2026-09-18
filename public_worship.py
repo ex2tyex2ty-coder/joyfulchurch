@@ -1,11 +1,13 @@
 """Public, read-only worship views. Never read shared cue/room storage."""
-from datetime import date
+import copy
+import time
 from html import escape
 
 import streamlit as st
 
 from cue_source import SOURCES, download
 from cue_ui import scripture
+from time_utils import now_kst, today_kst
 
 
 def public_plan(plan):
@@ -39,24 +41,43 @@ def public_cue_page():
     st.title("큐시트")
     st.caption("누구나 보는 예배 순서 · 로그인 없이 이용 · 이동은 내 화면에만 반영됩니다.")
     kind = st.radio("예배 선택", list(SOURCES), horizontal=True, key="public_cue_kind")
+    retry_key = "public_retry_after_"+kind
     if st.button("최신 큐시트 다시 읽기", key="public_cue_refresh"):
         public_plans.clear(kind)
+        st.session_state.pop(retry_key, None)
+    snapshot_key = "public_snapshot_"+kind
+    cached = st.session_state.get(snapshot_key)
     try:
+        if st.session_state.get(retry_key, 0) > time.time():
+            raise ValueError("retry backoff")
         with st.spinner("예배 순서를 불러오고 있어요…"):
             plans = public_plans(kind)
+        if not plans:
+            raise ValueError("empty source")
+        if not cached or cached["plans"] != plans:
+            cached = {"plans": copy.deepcopy(plans), "at": now_kst().strftime("%Y-%m-%d %H:%M:%S KST")}
+            st.session_state[snapshot_key] = cached
+        st.session_state.pop(retry_key, None)
     except ValueError:
-        st.warning("큐시트를 불러오지 못했어요. 잠시 후 다시 읽기를 눌러 주세요.")
-        return
-    if not plans:
-        st.info("공개할 예배 순서를 찾지 못했어요. 원본의 날짜와 표 형식을 확인해 주세요.")
-        return
+        if st.session_state.get(retry_key, 0) <= time.time():
+            st.session_state[retry_key] = time.time()+30
+        if not cached:
+            st.warning("큐시트를 불러오지 못했어요. 잠시 후 다시 읽기를 눌러 주세요.")
+            return
+        plans = cached["plans"]
+        st.warning("원본 연결을 확인하지 못해 마지막 정상본을 표시합니다. 최신 변경은 아직 반영되지 않았어요.")
+        st.caption("이 브라우저에서 정상본을 보관한 시각: "+cached["at"]+" · 재접속/브라우저 종료 후에는 유지되지 않을 수 있습니다.")
     plans = sorted(plans, key=lambda p: p["date"], reverse=True)
-    plan_index = st.selectbox("예배 날짜 확인", range(len(plans)),
-                              format_func=lambda i: plans[i]["title"] + f" · 목록 {i+1}",
-                              key="public_plan_"+kind)
-    plan = plans[plan_index]
+    by_id = {p["id"]: p for p in plans}
+    select_key = "public_plan_id_"+kind
+    previous_plan = st.session_state.get(select_key)
+    if previous_plan and previous_plan not in by_id:
+        st.warning("선택한 예배가 원본 목록에서 없어졌어요. 예배 날짜를 다시 확인해 주세요.")
+        st.session_state[select_key] = next(iter(by_id))
+    selected = st.selectbox("예배 날짜 확인", list(by_id), format_func=lambda sid: by_id[sid]["title"], key=select_key)
+    plan = by_id[selected]
     st.subheader(plan["title"])
-    if plan["date"] != date.today().isoformat():
+    if plan["date"] != today_kst().isoformat():
         st.info(f"선택한 큐시트 날짜는 {plan['date']}입니다. 오늘 예배 자료인지 확인해 주세요.")
     items = plan["items"]
     if not items:
@@ -85,13 +106,24 @@ def public_cue_page():
 def personal_sequence(plan):
     items = plan["items"]
     position_key = "public_position_"+plan["id"]
-    position = min(max(int(st.session_state.get(position_key, 0)), 0), len(items)-1)
+    ids = [i["id"] for i in items]
+    selected_key = "public_item_"+plan["id"]
+    selected = st.session_state.get(selected_key)
+    if selected and selected not in ids:
+        st.warning("보던 순서가 원본에서 삭제되거나 이름이 바뀌었어요. 첫 순서로 이동했습니다. 전체 순서에서 다시 선택해 주세요.")
+        position = 0
+    elif selected:
+        position = ids.index(selected)
+    else:
+        # Preserve existing r44 sessions once, then use item identity thereafter.
+        position = min(max(int(st.session_state.get(position_key, 0)), 0), len(items)-1)
     previous, following = st.columns(2)
     if previous.button("← 이전 순서", disabled=position == 0, width="stretch"):
         position -= 1
     if following.button("다음 순서 →", disabled=position == len(items)-1, width="stretch"):
         position += 1
     st.session_state[position_key] = position
+    st.session_state[selected_key] = ids[position]
     item = items[position]
     with st.container(border=True):
         st.caption(f"내가 보는 순서 {position+1} / {len(items)}")
@@ -106,6 +138,7 @@ def personal_sequence(plan):
             if st.button(f"{'● ' if index == position else ''}{index+1}. {entry['title']}",
                          key="public_jump_"+entry["id"], width="stretch"):
                 st.session_state[position_key] = index
+                st.session_state[selected_key] = entry["id"]
                 st.rerun()
 
 
