@@ -13,6 +13,7 @@ from streamlit.components.v1 import declare_component
 
 from audio_requests import AudioStore, AudioError
 import audio_realtime
+from audio_sync import accept_event, read_snapshot, transport_healthy
 from audio_profiles import GROUPS, INSTRUMENTS, CUSTOM_INSTRUMENT, selected_instrument, request_groups, request_sender
 from audio_chat_ui import chat_thread
 from audio_alerts import desk_alerts
@@ -47,7 +48,7 @@ def secret(name):
 
 
 def ensure_current_store(store):
-    required=("rooms_for_desk","my_conversation","conversations","conversation_action","delete_room")
+    required=("rooms_for_desk","my_conversation","conversations","conversation_action","conversation_stamp","delete_room")
     if not all(callable(getattr(store,name,None)) for name in required):
         raise AudioError("[U01] 이전 버전의 음향 기능이 남아 있어요. 최신 ZIP 내부 파일을 모두 업로드한 뒤 Streamlit에서 Reboot해 주세요. 기존 데이터와 Secrets는 지우지 마세요.")
     return store
@@ -137,6 +138,12 @@ def participant_controls(store, token):
     if receipt.get("token")==token:
         st.success(f"요청이 저장됐어요 · {receipt['body']}\n\n같은 요청을 다시 누르지 않아도 돼요. 아래 대화에서 처리 상태를 확인하세요.")
     if not closed:
+        pending = st.session_state.get("sound_pending_send", {})
+        if pending.get("scope") == audio_realtime.digest(token) and pending.get("error"):
+            st.warning("전송 완료를 확인하지 못했어요. 아래 내용은 재전송할 수 있도록 보관했습니다.")
+            st.text(pending["body"])
+            if st.button("이 요청 다시 보내기", key="sound_retry_send", width="stretch"):
+                send_request(store, token, pending["body"])
         choices, extra = request_groups(person)
         kids = person.get("location") == "키즈룸"
         st.caption("키즈룸 요청은 음향석에서 확인해요. 같은 요청은 대기 중 한 건으로 묶여요." if kids else "음량 버튼은 내 모니터에서 들리는 소리 조절 요청이에요. 객석 음량이나 특정 악기 조절은 아래 메시지에 적어 주세요.")
@@ -163,20 +170,18 @@ def participant_controls(store, token):
 
 def refresh_requests_button(key):
     with st.container(key=f"{key}_bar"):
-        st.caption("요청이나 답변이 안 보이면 새로고침해 주세요.")
-        st.button("요청·답변 새로고침", icon=":material/refresh:", key=key, width="stretch")
+        return st.button("요청·답변 새로고침", icon=":material/refresh:", key=key, type="tertiary")
 
 
-def participant_live(store, token):
-    refresh_requests_button("sound_mine_refresh")
+def participant_live(store, token, snapshot=None, checked_at=None):
     try:
-        room,thread = store.my_conversation(token)
+        room,thread = snapshot if snapshot is not None else store.my_conversation(token)
     except AudioError as exc:
         st.error("연결 확인 중 · 아래 상태는 최신 상태가 아닐 수 있어요.")
         flash_error(exc)
         return
     closed = bool(room["closed"] or room["expires_at"] <= time.time())
-    st.caption(f"{'종료된 예배방' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
+    st.caption(f"{'종료된 예배방 · 기록 열람' if closed else '대화 기록'} · 마지막 데이터 확인 {timestamp(checked_at or time.time())}")
     st.subheader("음향석과의 대화")
     st.caption(f"처리 대기 {thread['waiting']}건 · 요청과 답변이 시간순으로 이어져요 · 본인과 음향석만 볼 수 있어요")
     chat_thread(room,thread,desk=False,act=lambda action,message="": thread_action(store,room,thread,action,message,token=token))
@@ -188,34 +193,50 @@ def thread_action(store,room,thread,action,message="",token=None):
         return
     key="sound_thread_pending_"+thread["person"]["id"]
     pending=st.session_state.get(key)
-    if not pending or (pending["action"],pending["message"])!=(action,message):
-        pending={"id":uuid.uuid4().hex,"action":action,"message":message}
+    actor = audio_realtime.digest(token) if token else st.session_state.get("sound_engineer_id", "")
+    if not pending or (pending["action"],pending["message"],pending.get("actor"))!=(action,message,actor):
+        pending={"id":uuid.uuid4().hex,"action":action,"message":message,"actor":actor}
         st.session_state[key]=pending
     try:
         store.conversation_action(room["id"],thread["person"]["id"],thread["revision"],action,pending["id"],
             engineer_id=st.session_state.get("sound_engineer_id","") if token is None else "",
             engineer=st.session_state.get("sound_engineer_name","") if token is None else "",message=message,token=token)
         st.session_state.pop(key,None)
+        invalidate_sound_views()
         st.rerun()
     except (AudioError,ValueError) as exc:
+        pending["error"] = str(exc)
         flash_error(exc)
+
+
+def invalidate_sound_views():
+    for key in st.session_state:
+        if key.startswith("sound_sync_"):
+            st.session_state[key]["force"] = True
 
 
 def send_request(store,token,body):
     # Keep the same id after uncertain network failures; never duplicate on retry.
     pending = st.session_state.get("sound_pending_send")
-    if not pending or pending["body"] != body:
-        pending = {"id":uuid.uuid4().hex,"body":body}
+    scope = audio_realtime.digest(token)
+    if not pending or pending["body"] != body or pending.get("scope") != scope:
+        pending = {"id":uuid.uuid4().hex,"body":body,"scope":scope}
         st.session_state["sound_pending_send"] = pending
     try:
-        request_id=store.send(token,body,pending["id"])
+        with st.spinner("요청 보내는 중…"):
+            request_id=store.send(token,body,pending["id"])
         st.session_state.pop("sound_pending_send",None)
         st.session_state["sound_send_receipt"]={"token":token,"body":body,"id":request_id}
+        invalidate_sound_views()
         # A user-initiated send refreshes both composer and inbox once, even
         # when Realtime is not configured. Never claim success before commit.
         st.rerun()
     except (AudioError,ValueError) as exc:
+        pending["error"] = str(exc)
+        st.session_state.pop("sound_send_receipt", None)
         flash_error(exc)
+        if isinstance(exc, AudioError):
+            st.rerun()  # Show the persisted retry card immediately, including after an uncertain commit.
 
 
 def desk_action(store,room_id,request,action,message=""):
@@ -229,20 +250,19 @@ def desk_action(store,room_id,request,action,message=""):
         flash_error(exc)
 
 
-def desk_live(store,room_id):
+def desk_live(store,room_id,snapshot=None,checked_at=None):
     if not engineer_access():
         st.warning("음향석 접속 시간이 끝났어요. 접근번호를 다시 입력해 주세요.")
         return
-    refresh_requests_button("sound_desk_refresh")
     try:
-        room,threads=store.conversations(room_id)
+        room,threads=snapshot if snapshot is not None else store.conversations(room_id)
     except AudioError as exc:
         st.error("연결 확인 중 · 요청 수신이 지연될 수 있어요.")
         flash_error(exc)
         return
     closed=bool(room["closed"] or room["expires_at"]<=time.time())
     desk_alerts(room,threads)
-    st.caption(f"{'예배방 종료 · 기록 열람' if closed else '연결됨'} · 마지막 확인 {timestamp(time.time())}")
+    st.caption(f"{'예배방 종료 · 기록 열람' if closed else '대화 기록'} · 마지막 데이터 확인 {timestamp(checked_at or time.time())}")
     archived=sum(bool(t["person"].get("desk_archived")) for t in threads)
     st.subheader(f"진행 대화 {len(threads)-archived}명 · 보관 {archived}명")
     view=st.radio("대화 목록",["진행 대화","보관함"],horizontal=True,key="sound_thread_view")
@@ -258,53 +278,76 @@ def prepare_realtime(database_url, _store, schema_version):
     return True
 
 
-@st.fragment
+@st.fragment(run_every=3)
 def live_panel(renderer, store, identity):
-    """Rerun on component events or clicks only; never on a polling timer."""
+    """Push-first inbox. Timer probes metadata, never resets the composer."""
     is_desk = renderer is desk_live
+    scope = audio_realtime.digest(("desk:" if is_desk else "person:") + identity)
+    state = st.session_state.setdefault("sound_sync_"+scope, {})
     if is_desk and not engineer_access():
+        state.clear()
         st.warning("음향석 접근번호를 다시 입력해 주세요.")
         return
+    now = time.time()
+    force = refresh_requests_button("sound_desk_refresh" if is_desk else "sound_mine_refresh")
+    force = state.pop("force", False) or force
     url, key = secret("AUDIO_SUPABASE_URL"), secret("AUDIO_SUPABASE_PUBLISHABLE_KEY")
-    scope = audio_realtime.digest(("desk:" if is_desk else "person:") + identity)
-    if url and key and _realtime_component:
+    ready = False
+    if url and key and _realtime_component and now >= state.get("setup_retry", 0):
         try:
             url = audio_realtime.validate_settings(url,key)
             prepare_realtime(secret("AUDIO_DATABASE_URL"),store,"r37")
-            if st.button("실시간 수신 다시 연결",type="tertiary",key="sound_reconnect"):
-                st.session_state["sound_rt_restart"] = uuid.uuid4().hex
-                st.session_state.pop("sound_rt_auth",None)
-            cached = st.session_state.get("sound_rt_auth",{})
-            valid = cached.get("scope")==scope and cached.get("expires",0)>time.time()
-            event = _realtime_component(url=url,api_key=key,scope=scope,
+            ready = True
+            state.pop("setup_error", None)
+        except AudioError as exc:
+            state.update(setup_error=str(exc), setup_retry=now+30)
+    if st.button("실시간 수신 다시 연결",type="tertiary",key="sound_reconnect"):
+        st.session_state["sound_rt_restart"] = uuid.uuid4().hex
+        st.session_state.pop("sound_rt_auth",None)
+        state.update(setup_retry=0, stopped=False, transport="auth")
+        force = True
+    cached = st.session_state.get("sound_rt_auth",{})
+    valid = cached.get("scope")==scope and cached.get("expires",0)>now
+    if _realtime_component:
+        event = _realtime_component(url=url if ready else "",api_key=key if ready else "",scope=scope,
+                enabled=not state.get("stopped",False),
                 restart=st.session_state.get("sound_rt_restart",""),
                 accepted_token=cached.get("token","") if valid else "",
                 topic=cached.get("topic","") if valid else "",
                 expires=cached.get("expires",0) if valid else 0,
                 key="sound_realtime_events",default=None)
-            if isinstance(event,dict) and event.get("scope")==scope:
+        if accept_event(state, event, scope, now) and ready and event.get("status")=="auth":
+            try:
                 token=event.get("token","")
-                if event.get("status")=="auth" and (not valid or token!=cached.get("token")):
-                    uid,expires = audio_realtime.verify_browser(url,key,token)
-                    topic,expires = audio_realtime.authorize(store,uid,expires,
-                        participant_token=None if is_desk else identity,
-                        room_id=identity if is_desk else None,
-                        engineer_until=st.session_state.get("sound_engineer_until",0) if is_desk else 0)
-                    st.session_state["sound_rt_auth"]={"scope":scope,"token":token,"topic":topic,"expires":expires}
-                    # Initial handshake / credential renewal only. Ordinary push
-                    # events rerun this fragment without touching the composer.
-                    st.rerun()
-                if event.get("status") in {"error","offline"}:
-                    st.warning("실시간 연결이 끊겼어요. 다시 연결하거나 아래 새로고침으로 확인하세요.")
-                elif event.get("status")=="expired":
-                    st.info("예배방 또는 수신 접속 시간이 끝났어요. 새 예배방으로 입장해 주세요.")
-        except AudioError as exc:
-            flash_error(exc)
-            st.caption("실시간 알림을 연결하지 못했어요. 아래 새로고침으로 확인할 수 있어요.")
+                uid,expires = audio_realtime.verify_browser(url,key,token)
+                topic,expires = audio_realtime.authorize(store,uid,expires,
+                    participant_token=None if is_desk else identity,
+                    room_id=identity if is_desk else None,
+                    engineer_until=st.session_state.get("sound_engineer_until",0) if is_desk else 0)
+                st.session_state["sound_rt_auth"]={"scope":scope,"token":token,"topic":topic,"expires":expires}
+                state.pop("auth_error",None)
+            except AudioError as exc:
+                state["auth_error"] = str(exc)
+    snapshot = read_snapshot(store, state, identity=identity, desk=is_desk,
+                             engineer_until=st.session_state.get("sound_engineer_until",0), now=now, force=force)
+    if state.get("error"):
+        st.error("연결 끊김 · 마지막 기록일 수 있어요. 자동으로 다시 확인합니다." if not state.get("stopped") else "자동 수신 중단")
+        st.caption(state["error"])
+    elif state.get("stopped"):
+        st.info("예배방 종료 · 자동 수신을 멈췄어요. 기록은 계속 볼 수 있습니다.")
+    elif transport_healthy(state, now):
+        st.success("실시간 수신 정상 · 새 요청·답변을 자동 반영합니다.")
+    elif state.get("transport")=="paused":
+        st.caption("화면 복귀 시 놓친 대화를 확인합니다.")
     else:
-        st.info("실시간 알림 설정이 필요해요. 지금은 새로고침을 눌러 요청·답변을 확인하세요.")
+        st.info("자동 확인으로 연결 중 · 약 3초마다 변경을 확인합니다. 새로고침하지 않아도 됩니다.")
+    if not ready and not state.get("stopped"):
+        st.caption(state.get("setup_error") or "실시간 설정이 없거나 연결 준비 중입니다. 자동 확인은 계속 작동합니다.")
+    if state.get("auth_error") and not state.get("stopped"):
+        st.caption(state["auth_error"])
     with st.container(key="sound_live_region"):
-        renderer(store,identity)
+        if snapshot is not None:
+            renderer(store,identity,snapshot=snapshot,checked_at=state.get("checked_at"))
 
 
 def audio_page():

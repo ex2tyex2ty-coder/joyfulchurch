@@ -25,6 +25,28 @@ def conversation(person, requests, messages):
 
 
 class ConversationStore:
+    def conversation_stamp(self, *, participant_token=None, room_id=None, engineer_until=0):
+        """Scoped metadata only. Read BEFORE the snapshot to avoid lost updates."""
+        from audio_requests import AudioAccessError
+        if participant_token is None and engineer_until <= time.time():
+            raise AudioAccessError("음향석 접속 시간이 끝났어요. 다시 로그인해 주세요.")
+        with self.transaction() as conn:
+            if participant_token is not None:
+                person = self.person(conn, participant_token)
+                room_id = person['room_id']
+                condition, value = 'p.id=?', person['id']
+            else:
+                condition, value = 'p.room_id=?', room_id
+            room = self.room(conn, room_id, active=False)
+            rows = self.sql(conn, """SELECT p.id,p.alias,p.location,p.instrument,p.desk_archived,
+                (SELECT COUNT(*) FROM sound_requests r WHERE r.person_id=p.id) AS requests,
+                (SELECT COALESCE(SUM(r.revision),0) FROM sound_requests r WHERE r.person_id=p.id) AS revisions,
+                (SELECT COUNT(*) FROM sound_thread_messages m WHERE m.person_id=p.id) AS messages,
+                (SELECT COUNT(*) FROM sound_replies x JOIN sound_requests r ON r.id=x.request_id WHERE r.person_id=p.id) AS replies
+                FROM sound_people p WHERE """+condition+" ORDER BY p.id", (value,)).fetchall()
+            metadata = [{k: room[k] for k in ('id','label','closed','expires_at')}, [dict(r) for r in rows]]
+            return hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest()
+
     def rooms_for_desk(self):
         with self.transaction() as conn:
             return [dict(r) for r in self.sql(conn,"SELECT id,label,expires_at,closed FROM sound_rooms ORDER BY CASE WHEN closed=0 AND expires_at>? THEN 0 ELSE 1 END, expires_at DESC",(time.time(),)).fetchall()]

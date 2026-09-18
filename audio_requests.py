@@ -20,6 +20,10 @@ class AudioError(RuntimeError):
     pass
 
 
+class AudioAccessError(AudioError):
+    """Missing identity/room: automatic readers must stop, not retry forever."""
+
+
 def connection_help(exc):
     """Return allowlisted diagnostics only; driver messages may contain secrets."""
     state = str(getattr(exc, "sqlstate", "") or "")
@@ -166,7 +170,7 @@ class AudioStore(ConversationStore):
         suffix = "" if self.test_path or not active else " FOR UPDATE"
         row = self.sql(conn, "SELECT * FROM sound_rooms WHERE id=?" + suffix, (room_id,)).fetchone()
         if not row:
-            raise AudioError("예배방을 찾을 수 없어요.")
+            raise AudioAccessError("예배방을 찾을 수 없어요.")
         if active and (row["closed"] or row["expires_at"] <= time.time()):
             raise AudioError("종료된 예배방이에요. 새 예배방으로 입장해 주세요.")
         return dict(row)
@@ -174,7 +178,7 @@ class AudioStore(ConversationStore):
     def person(self, conn, token):
         row = self.sql(conn, "SELECT * FROM sound_people WHERE token_hash=?", (digest(token),)).fetchone()
         if not row:
-            raise AudioError("개인 복귀코드를 확인해 주세요.")
+            raise AudioAccessError("개인 복귀코드를 확인해 주세요.")
         return dict(row)
 
     def create_room(self, label, code, room_id):

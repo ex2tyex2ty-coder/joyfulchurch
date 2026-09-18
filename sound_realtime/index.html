@@ -7,22 +7,26 @@ const post = (type, extra) => window.parent.postMessage({isStreamlitMessage:true
 window.addEventListener('message', e => {
   if (e.source !== window.parent || e.origin !== window.location.origin || e.data.type !== 'streamlit:render') return;
   const args = e.data.args || {};
-  const next = JSON.stringify([args.url,args.api_key,args.scope,args.restart]);
+  const next = JSON.stringify([args.url,args.api_key,args.scope,args.restart,args.enabled]);
   if (binding !== next) {
     if (client) client.stop();
     binding = next;
     client = new SoundRealtime(args, value => {
-      document.getElementById('status').textContent = ({connected:'실시간 수신 연결됨',changed:'새 요청·답변 반영 중',auth:'수신 권한 확인 중',offline:'연결이 끊겼어요 · 재연결 중',error:'실시간 연결 실패 · 다시 연결을 눌러 주세요',expired:'예배방 또는 접속 시간이 끝났어요'})[value.status] || '연결 중';
+      document.getElementById('status').textContent = ({connected:'실시간 수신 연결됨',healthy:'실시간 수신 연결됨',changed:'새 요청·답변 반영 중',auth:'수신 권한 확인 중 · 자동 확인 병행',offline:'자동 재연결 중 · 자동 확인 병행',fallback:'자동 확인 모드 · 실시간 설정 필요',paused:'화면 복귀 시 다시 연결',catchup:'놓친 대화 확인 중'})[value.status] || '연결 중';
       post('streamlit:setComponentValue',{value,dataType:'json'});
     });
-    client.start();
+    if(args.enabled===false) {client.stop();document.getElementById('status').textContent='자동 수신 종료';}
+    else if(document.hidden) client.pause();
+    else client.start();
   }
   client.authorize(args);
   post('streamlit:setFrameHeight',{height:24});
 });
 window.addEventListener('beforeunload',()=>client && client.stop());
 document.addEventListener('visibilitychange',()=>{
-  if (!document.hidden && client) client.resume();
+  if(client) document.hidden?client.pause():client.resume();
 });
+window.addEventListener('online',()=>client && !document.hidden && client.resume());
+window.addEventListener('pageshow',()=>client && !document.hidden && client.resume());
 post('streamlit:componentReady',{apiVersion:1});
 </script></body></html>

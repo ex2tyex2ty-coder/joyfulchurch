@@ -25,7 +25,7 @@ def chat_thread(room, thread, *, desk, act):
                     if event.get("cue_context"):
                         st.caption("요청 당시 순서 · "+event["cue_context"])
                     if event.get("status"):
-                        st.caption({"PENDING":"전송 완료 · 확인 대기","ACK":"처리 중","DONE":"조치 완료","CLOSED":"확인 완료","CANCELLED":"취소됨","EXPIRED":"예배방 종료"}.get(event["status"],event["status"]))
+                        st.caption({"PENDING":"저장 완료 · 음향석 확인 대기","ACK":"음향석 확인 · 처리 중","DONE":"조치 완료","CLOSED":"확인 완료","CANCELLED":"취소됨","EXPIRED":"예배방 종료"}.get(event["status"],event["status"]))
         if desk:
             if archived:
                 st.caption("진행 목록에서만 숨긴 상태예요. 기록은 삭제되지 않았어요.")
@@ -37,6 +37,12 @@ def chat_thread(room, thread, *, desk, act):
                     act("ack")
                 if c2.button("현재 요청 조치 완료",key=f"thread_done_{pid}",disabled=not waiting,width="stretch"):
                     act("done")
+                pending = st.session_state.get("sound_thread_pending_"+pid, {})
+                if pending.get("action")=="reply" and pending.get("error") and pending.get("actor")==st.session_state.get("sound_engineer_id"):
+                    st.warning("답변 전송 완료를 확인하지 못했어요. 내용은 보관했습니다.")
+                    st.text(pending["message"])
+                    if st.button("이 답변 다시 보내기",key=f"thread_retry_{pid}",width="stretch"):
+                        act("reply",pending["message"])
                 with st.form(f"thread_reply_form_{pid}",clear_on_submit=True):
                     message=st.text_input("이 대화에 답변",max_chars=300,key=f"thread_reply_text_{pid}",placeholder="예: 모니터 연결 확인했고, 반주도 올렸어요.")
                     if st.form_submit_button("답변 보내기",width="stretch"):
