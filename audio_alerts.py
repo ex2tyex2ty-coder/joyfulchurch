@@ -13,6 +13,8 @@ def collect_alerts(state, room, threads):
     closed = room["closed"] or room["expires_at"] <= time.time()
     for thread in threads:
         sender = request_sender(thread["person"])
+        last_desk = max((n for n,e in enumerate(thread['events']) if e['side'] in {'engineer','legacy'}), default=-1)
+        unread_chat = {e['id'] for e in thread['events'][last_desk+1:] if e['side']=='participant' and e['id'].startswith('chat:')}
         for request in thread["requests"]:
             key = "request:" + request["id"]
             if key not in known and request["status"] == "PENDING" and not closed:
@@ -20,10 +22,11 @@ def collect_alerts(state, room, threads):
             known.add(key)
         for event in thread["events"]:
             key = "event:" + event["id"]
-            if (not first and key not in known and not closed
+            new_chat = event['id'].startswith('chat:') and (not first or event['id'] in unread_chat)
+            if ((not first or new_chat) and key not in known and not closed
                     and event["side"] == "participant"
                     and not event["id"].startswith("request:")
-                    and event["body"] == "추가 조정이 필요해요."):
+                    and (new_chat or event["body"] == "추가 조정이 필요해요.")):
                 pending[key] = (sender, event["body"])
             known.add(key)
     state["initialized"] = True

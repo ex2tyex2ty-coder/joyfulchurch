@@ -184,7 +184,7 @@ def participant_live(store, token, snapshot=None, checked_at=None):
     st.caption(f"{'종료된 예배방 · 기록 열람' if closed else '대화 기록'} · 마지막 데이터 확인 {timestamp(checked_at or time.time())}")
     st.subheader("음향석과의 대화")
     st.caption(f"처리 대기 {thread['waiting']}건 · 요청과 답변이 시간순으로 이어져요 · 본인과 음향석만 볼 수 있어요")
-    chat_thread(room,thread,desk=False,act=lambda action,message="": thread_action(store,room,thread,action,message,token=token))
+    chat_thread(room,thread,desk=False,actor=audio_realtime.digest(token),act=lambda action,message="": thread_action(store,room,thread,action,message,token=token))
 
 
 def thread_action(store,room,thread,action,message="",token=None):
@@ -207,6 +207,8 @@ def thread_action(store,room,thread,action,message="",token=None):
     except (AudioError,ValueError) as exc:
         pending["error"] = str(exc)
         flash_error(exc)
+        if action in {'reply','message'}:
+            st.rerun()
 
 
 def invalidate_sound_views():
