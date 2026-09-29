@@ -123,7 +123,7 @@ class ConversationStore:
             if action not in {'message','reply'} and current["revision"]!=expected:
                 raise AudioError("새 요청이나 답변이 들어왔어요. 새로고침 후 대화를 확인하고 다시 눌러 주세요.")
             if action=='message':
-                last=self.sql(conn,"SELECT MAX(created_at) AS t FROM sound_thread_messages WHERE person_id=? AND side='participant' AND id LIKE 'chat:%'",(person_id,)).fetchone()['t']
+                last=self.sql(conn,"SELECT MAX(created_at) AS t FROM sound_thread_messages WHERE person_id=? AND side='participant' AND id LIKE ?",(person_id,'chat:%')).fetchone()['t']
                 if last and time.time()-last<1:
                     raise ValueError("메시지를 전달 중이에요. 잠시 후 다시 보내 주세요.")
             open_rows=[r for r in current["requests"] if r["status"] in {"PENDING","ACK"}]

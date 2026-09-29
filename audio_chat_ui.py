@@ -41,12 +41,15 @@ def chat_thread(room, thread, *, desk, act, actor=None):
                     act("ack")
                 if c2.button("현재 요청 조치 완료",key=f"thread_done_{pid}",disabled=not actionable,width="stretch"):
                     act("done")
-                st.caption("모두 대응했으면 보관하세요. 새 요청이 오면 진행 목록에 다시 나타나요.")
-                if st.button("처리 완료·보관" if actionable else "대화 보관하기",key=f"thread_archive_{pid}",width="stretch"):
-                    act("done_archive" if actionable else "archive")
-                if any(r["engineer_id"]==st.session_state.get("sound_engineer_id") and r["status"] in {"PENDING","ACK"} for r in thread["requests"]):
-                    if st.button("내 담당 해제",key=f"thread_release_{pid}",type="tertiary"):
-                        act("release")
+                if st.button('조정했어요 · 빠른 답변',key=f'thread_quick_reply_{pid}',width='stretch'):
+                    act('reply','조정했어요. 소리가 괜찮은지 확인해 주세요.')
+                with st.expander('대화 정리·보관'):
+                    st.caption("새 요청이나 메시지가 오면 진행 목록에 다시 나타나요.")
+                    if st.button("처리 완료·보관" if actionable else "대화 보관하기",key=f"thread_archive_{pid}",width="stretch"):
+                        act("done_archive" if actionable else "archive")
+                    if any(r["engineer_id"]==st.session_state.get("sound_engineer_id") and r["status"] in {"PENDING","ACK"} for r in thread["requests"]):
+                        if st.button("내 담당 해제",key=f"thread_release_{pid}",type="tertiary"):
+                            act("release")
             elif st.button("대화 보관하기",key=f"thread_archive_closed_{pid}",width="stretch"):
                 act("archive")
         elif not closed:

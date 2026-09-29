@@ -54,13 +54,13 @@ def full_schedule_html(items, *, large=False, numbers=None):
     rows = []
     for index, item in enumerate(items):
         detail = item["body"] if item["body"] and item["body"] not in item["title"] else ""
-        rows.append('<tr><td>'+escape(item.get("time") or "—")+'</td><td><strong>'
+        rows.append('<tr><td><strong>'
                     +str(numbers[index] if numbers else index+1)+'. '+escape(item["title"])
                     +'</strong>' + ('<div>'+escape(detail)+'</div>' if detail else '')+'</td></tr>')
     return '''<style>.public-cue-table{width:100%;border-collapse:collapse;table-layout:fixed;background:white;color:#191f28;font-size:FONT_SIZEpx;line-height:1.6}
     .public-cue-table th,.public-cue-table td{padding:14px 10px;border-bottom:1px solid #e5e8eb;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}
-    .public-cue-table th{background:#fff1e3}.public-cue-table th:first-child{width:TIME_WIDTHpx}.public-cue-table td:first-child{font-variant-numeric:tabular-nums}.public-cue-table td div{margin-top:6px;line-height:1.6}</style>
-    <table class="public-cue-table"><thead><tr><th scope="col">시간</th><th scope="col">예배 순서·내용</th></tr></thead><tbody>'''.replace('FONT_SIZE', '21' if large else '16').replace('TIME_WIDTH', '96' if large else '80')+''.join(rows)+'</tbody></table>'
+    .public-cue-table th{background:#fff1e3}.public-cue-table td div{margin-top:6px;line-height:1.6}</style>
+    <table class="public-cue-table"><thead><tr><th scope="col">예배 순서·내용</th></tr></thead><tbody>'''.replace('FONT_SIZE', '21' if large else '16')+''.join(rows)+'</tbody></table>'
 
 
 def public_bible_passages(plan):
@@ -180,10 +180,10 @@ def render_public_cue(plan, kind, large, cached):
                    f"https://docs.google.com/spreadsheets/d/{SOURCES[kind]}/edit", width="stretch")
     whole, follow = st.tabs(["전체 큐시트", "한 순서씩 보기"], key="public_cue_view", on_change="rerun")
     with whole:
-        query = st.text_input("순서·찬양·본문 검색", placeholder="예: 히브리서, 찬양 제목, 14:40", key="public_cue_search_"+plan["id"])
+        query = st.text_input("순서·찬양·본문 검색", placeholder="예: 히브리서, 찬양 제목", key="public_cue_search_"+plan["id"])
         category = st.radio("표시할 순서", ["전체", "찬양", "말씀"], horizontal=True, key="public_cue_filter_"+plan["id"])
         matched = find_cues(items, query, category)
-        st.caption(f"전체 {len(items)}개 항목 · 시간은 원본 표 기준입니다. 같은 찬양 묶음의 곡들은 시작 시간이 같습니다.")
+        st.caption(f"전체 {len(items)}개 항목 · 예배 순서대로 표시합니다.")
         if query.strip() or category != "전체":
             st.caption(f"검색 결과 {len(matched)}개 · 번호는 원래 순서입니다. 아래 항목을 누르면 한 순서씩 보기로 이동합니다.")
             for number, entry in matched:

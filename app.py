@@ -45,6 +45,7 @@ from google_sheets_sync import sync_google_sheets
 from audio_ui import audio_page, cross_page_sound_alerts
 from cue_ui import cue_page
 from public_worship import public_cue_page, bulletin_page
+from app_navigation import selected_page, navigation_bar
 from board_history import history_items, render_history
 from google_review_board import (
     RESOLUTION_COMMENT_PREFIX,
@@ -1601,109 +1602,6 @@ def shared_review_board() -> None:
                         st.error(str(exc))
 
 
-def sidebar() -> str:
-    with st.sidebar:
-        st.markdown("## 조이풀교회")
-        st.caption("예배 운영 · 지식관리")
-        st.markdown("---")
-        primary_menu_items = [
-            "대시보드",
-            "큐시트",
-            "주보",
-            "예배 인원 현황",
-            "팀 확인",
-            "음향 요청",
-            "예배 진행",
-            "행사",
-            "성경 검색",
-            "교회력",
-            "전체 검색",
-        ]
-        secondary_menu_items = ["매뉴얼", "결정·운영로그", "보관함", "데이터·백업"]
-        menu_labels = {
-            "큐시트": "큐시트",
-            "주보": "주보",
-            "대시보드": "대시보드",
-            "팀 확인": "팀 게시판",
-            "음향 요청": "음향 요청",
-            "예배 진행": "예배 진행",
-            "교회력": "교회력",
-            "행사": "행사",
-            "매뉴얼": "매뉴얼",
-            "결정·운영로그": "결정·운영 기록",
-            "예배 인원 현황": "예배 인원 현황",
-            "성경 검색": "성경 검색",
-            "전체 검색": "전체 검색",
-            "보관함": "보관함",
-            "데이터·백업": "데이터·백업",
-        }
-        pending_nav = st.session_state.pop("_navigate_to", None)
-        if pending_nav in primary_menu_items:
-            st.session_state["main_nav"] = pending_nav
-            st.session_state.pop("_secondary_nav", None)
-        elif pending_nav in secondary_menu_items:
-            st.session_state["_secondary_nav"] = pending_nav
-        if st.session_state.get("main_nav") not in primary_menu_items:
-            st.session_state["main_nav"] = "대시보드"
-        nav = st.radio(
-            "메뉴",
-            primary_menu_items,
-            label_visibility="collapsed",
-            key="main_nav",
-            format_func=lambda value: menu_labels[value],
-        )
-        previous_nav = st.session_state.get("_last_main_nav")
-        if previous_nav is not None and previous_nav != nav:
-            st.session_state.pop("_secondary_nav", None)
-        st.session_state["_last_main_nav"] = nav
-        with st.expander("더 보기", expanded=st.session_state.get("_secondary_nav") is not None):
-            if st.session_state.get("_secondary_nav") and st.button(
-                f"← {menu_labels[nav]}로 돌아가기",
-                key="sidebar_return_primary",
-                width="stretch",
-            ):
-                st.session_state.pop("_secondary_nav", None)
-                st.rerun()
-            for page in secondary_menu_items:
-                if page == "결정·운영로그" and not has_access("TEAM"):
-                    continue
-                if page in {"보관함", "데이터·백업"} and not has_access("ADMIN"):
-                    continue
-                marker = "• " if st.session_state.get("_secondary_nav") == page else ""
-                if st.button(
-                    marker + menu_labels[page],
-                    key=f"sidebar_secondary_{page}",
-                    width="stretch",
-                ):
-                    navigate(page)
-        st.markdown("---")
-        if st.session_state.pop("_clear_quick_search", False):
-            st.session_state["quick_search"] = ""
-        with st.expander("빠른 검색", expanded=False):
-            with st.form("sidebar_quick_search_form"):
-                quick = st.text_input(
-                    "검색어",
-                    placeholder="세례, 성찬, 마이크…",
-                    key="quick_search",
-                    label_visibility="collapsed",
-                )
-                quick_submitted = st.form_submit_button("검색", width="stretch")
-        if quick_submitted and quick.strip():
-            st.session_state["search_term"] = quick.strip()
-            navigate("전체 검색")
-        if str(st.session_state.get("_secondary_nav") or nav) != "예배 진행" and not st.session_state.get("_show_inline_access"):
-            access_control()
-        if has_access("TEAM") and not st.session_state.get("_show_inline_access") and nav != "예배 진행":
-            with st.expander("내 이름 설정"):
-                st.text_input(
-                    "게시판 작성자 이름",
-                    placeholder="예: 홍길동",
-                    key="operator_name",
-                    help="이 브라우저를 사용하는 동안 게시글과 댓글 작성자에 자동 입력됩니다.",
-                )
-        st.caption("원본 Sheets 읽기 전용 · 게시판 영구 저장")
-        st.caption(f"버전 {APP_VERSION}")
-        return str(st.session_state.get("_secondary_nav") or nav)
 
 
 def review_board_page() -> None:
@@ -3463,16 +3361,12 @@ def close_full_menu():
     st.session_state["_full_menu_open"] = False
 
 
-@st.dialog("전체 메뉴", width="large", on_dismiss=close_full_menu)
+@st.dialog("더보기", width="large", on_dismiss=close_full_menu)
 def full_menu():
     st.caption("보고 싶은 메뉴를 누르면 해당 화면으로 이동합니다.")
     with st.container(key="full_menu_items"):
-        if st.button("팀원 로그인 · 내 정보", key="menu_access", width="stretch"):
-            st.session_state["_show_inline_access"] = True
-            close_full_menu()
-            st.rerun()
         groups = [
-            ("누구나 보기", [("대시보드", "첫 화면"), ("큐시트", "찬양·본문·예배 순서"), ("주보", "교회 주보 · 준비 중"), ("성경 검색", "말씀 찾아보기")]),
+            ("누구나 보기", [("큐시트", "찬양·본문·예배 순서"), ("주보", "교회 주보 · 준비 중"), ("성경 검색", "말씀 찾아보기"), ("대시보드", "운영 현황·일정")]),
             ("예배 참여·담당자", [("음향 요청", "음향 담당자에게 요청"), ("예배 진행", "담당자 로그인 · 공동 진행"), ("예배 인원 현황", "출석 인원 확인"), ("팀 확인", "팀 준비 사항")]),
             ("자료·관리", [("행사", "교회 행사"), ("교회력", "예배 일정"), ("매뉴얼", "운영 안내"), ("전체 검색", "자료 찾기"), ("보관함", "보관 자료"), ("데이터·백업", "데이터 관리")]),
         ]
@@ -3487,23 +3381,22 @@ def full_menu():
                 if st.button(f"{display_page} — {description}", key="full_menu_"+page, width="stretch"):
                     close_full_menu()
                     navigate(page)
+        if st.button("팀원 로그인 · 내 정보", key="menu_access", width="stretch"):
+            st.session_state["_show_inline_access"] = True
+            close_full_menu()
+            st.rerun()
         if st.button("닫기 ✕", width="stretch"):
             close_full_menu()
             st.rerun()
 
 
 def main() -> None:
-    if st.session_state.get("_navigate_to", st.session_state.get("main_nav")) not in {"음향 요청", "예배 진행", "큐시트", "주보"}:
+    nav = selected_page()
+    if nav not in {"음향 요청", "예배 진행", "큐시트", "주보"}:
         bootstrap()
-    nav = sidebar()
     if nav != "음향 요청" and st.session_state.get("sound_monitor_enabled") and st.session_state.get("sound_monitor_room"):
         cross_page_sound_alerts()
-    with st.container(key="public_navigation"):
-        if st.button("☰ 전체 메뉴", key="open_full_menu", width="stretch"):
-            st.session_state["_full_menu_open"] = True
-        if st.session_state.get("_full_menu_open"):
-            full_menu()
-        st.caption(f"현재 화면 · {'팀 게시판' if nav == '팀 확인' else nav}")
+    navigation_bar(nav, navigate, full_menu)
     if nav == "대시보드":
         st.subheader("예배 바로가기")
         for page, description in [("큐시트", "찬양·본문·순서 보기"), ("주보", "교회 주보 보기"), ("음향 요청", "음향 담당자에게 요청")]:
@@ -3536,6 +3429,7 @@ def main() -> None:
         "데이터·백업": data_page,
     }
     pages[nav]()
+    st.caption(f"조이풀교회 · {APP_VERSION}")
 
 
 if __name__ == "__main__":

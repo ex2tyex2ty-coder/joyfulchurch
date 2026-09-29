@@ -7,6 +7,7 @@ and mutations use transactions plus revision checks to prevent double handling.
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import sqlite3
 import time
@@ -24,7 +25,7 @@ class AudioAccessError(AudioError):
     """Missing identity/room: automatic readers must stop, not retry forever."""
 
 
-def connection_help(exc):
+def connection_help(exc, operation="DB 처리"):
     """Return allowlisted diagnostics only; driver messages may contain secrets."""
     state = str(getattr(exc, "sqlstate", "") or "")
     message = str(exc).lower()
@@ -48,7 +49,18 @@ def connection_help(exc):
         code, hint = "A09", "DB 연결 주소 형식을 확인해 주세요. 비밀번호 부분의 특수문자 변환도 확인이 필요해요."
     else:
         code, hint = "A99", "DB 연결 또는 처리 중 오류가 발생했어요. 이 오류 코드를 관리자에게 알려주세요."
-    return f"[{code}] {hint} 전송 중이었다면 재전송 전에 내 요청을 확인해 주세요."
+    # Include only bounded, allowlisted identifiers, never the raw driver message,
+    # host, database URL, query, parameters, or credentials.
+    kinds={'OperationalError','ProgrammingError','IntegrityError','InterfaceError',
+           'InternalError','DataError','NotSupportedError','PoolTimeout','PoolClosed',
+           'UndefinedTable','UndefinedColumn','InsufficientPrivilege','QueryCanceled',
+           'DuplicateTable','DeadlockDetected','SerializationFailure','TypeError','AttributeError'}
+    kind=type(exc).__name__
+    detail=kind if kind in kinds else 'DatabaseError'
+    if re.fullmatch(r'[0-9A-Z]{5}',state):
+        detail+=' / '+state
+    stage=operation if operation in {'DB 처리','음향 저장소 준비','예배 진행 저장소 준비','연결 풀 준비'} else 'DB 처리'
+    return f"[{code}] {hint} 전송 중이었다면 재전송 전에 내 요청을 확인해 주세요. (단계: {stage} · 진단: {detail})"
 
 
 def digest(value: str) -> str:
@@ -74,7 +86,7 @@ class AudioStore(ConversationStore):
             raise AudioError("음향 요청 저장소를 먼저 연결해 주세요.")
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, operation="DB 처리"):
         conn = None
         connections = ExitStack()
         try:
@@ -103,7 +115,7 @@ class AudioStore(ConversationStore):
             if conn:
                 conn.rollback()
             # Never expose database URLs or driver connection errors in public UI.
-            raise AudioError(connection_help(exc)) from None
+            raise AudioError(connection_help(exc, operation)) from None
         finally:
             connections.close()
 
@@ -111,7 +123,7 @@ class AudioStore(ConversationStore):
         return conn.execute(statement if self.test_path else statement.replace("?", "%s"), args)
 
     def setup(self):
-        with self.transaction() as conn:
+        with self.transaction(operation="음향 저장소 준비") as conn:
             for statement in SCHEMA:
                 self.sql(conn, statement)
             if self.test_path:
@@ -157,7 +169,7 @@ class AudioStore(ConversationStore):
                                 sslmode="require", prepare_threshold=None),
                 )
             except Exception as exc:
-                raise AudioError(connection_help(exc)) from None
+                raise AudioError(connection_help(exc, "연결 풀 준비")) from None
 
     @staticmethod
     def text(value, label, limit):

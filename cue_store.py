@@ -19,7 +19,7 @@ class CueStore:
         self.db = audio_store
 
     def setup(self):
-        with self.db.transaction() as conn:
+        with self.db.transaction(operation="예배 진행 저장소 준비") as conn:
             self.db.sql(conn, "CREATE TABLE IF NOT EXISTS cue_sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL, payload TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, controller TEXT NOT NULL DEFAULT '', lease DOUBLE PRECISION NOT NULL DEFAULT 0, room_id TEXT UNIQUE REFERENCES sound_rooms(id) ON DELETE SET NULL)")
             if not self.db.test_path:
                 self.db.sql(conn, "ALTER TABLE cue_sessions ENABLE ROW LEVEL SECURITY")

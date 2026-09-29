@@ -2,6 +2,7 @@
 <script>
 // Only a random participant recovery token is stored, never requests or replies.
 const storageKey = 'joyful.sound.participant.v1';
+const entryKey = 'joyful.sound.entry.v1';
 let sent = '', lastClear = null;
 function message(type, extra) {
   window.parent.postMessage({isStreamlitMessage:true,type,...extra}, window.location.origin);
@@ -9,7 +10,7 @@ function message(type, extra) {
 window.addEventListener('message', event => {
   if (event.source !== window.parent || event.origin !== window.location.origin || event.data.type !== 'streamlit:render') return;
   const args = event.data.args || {};
-  let token = null, available = true;
+  let token = null, entry = null, available = true;
   try {
     if (args.clear_epoch && lastClear !== args.clear_epoch) {
       localStorage.removeItem(storageKey);
@@ -17,11 +18,13 @@ window.addEventListener('message', event => {
     }
     if (args.token_to_save) localStorage.setItem(storageKey,args.token_to_save);
     token = localStorage.getItem(storageKey);
+    if (['kids','team','desk'].includes(args.entry_to_save)) localStorage.setItem(entryKey,args.entry_to_save);
+    entry = localStorage.getItem(entryKey);
   } catch (_) { available = false; }
-  const payload = JSON.stringify({token,available});
+  const payload = JSON.stringify({token,entry,available});
   if (sent !== payload) {
     sent = payload;
-    message('streamlit:setComponentValue',{value:{token,available},dataType:'json'});
+    message('streamlit:setComponentValue',{value:{token,entry,available},dataType:'json'});
   }
   message('streamlit:setFrameHeight',{height:0});
 });

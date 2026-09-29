@@ -17,6 +17,7 @@ from audio_sync import accept_event, read_snapshot, transport_healthy
 from audio_profiles import GROUPS, INSTRUMENTS, CUSTOM_INSTRUMENT, selected_instrument, request_groups, request_sender
 from audio_chat_ui import chat_thread
 from audio_alerts import desk_alerts
+from audio_entry_links import entry_links_panel
 from config import APP_VERSION
 
 
@@ -162,10 +163,11 @@ def participant_controls(store, token):
             with st.expander("추가 요청 · 장비 점검"):
                 buttons(extra,len(choices))
                 st.caption("장비를 직접 제어하지 않고 음향석에 요청만 전달해요.")
-        with st.form("sound_message",clear_on_submit=True):
-            body = st.text_input("직접 요청 쓰기",max_chars=300,placeholder="예: 키즈룸에 담당자 도움이 필요해요" if kids else "예: 제 모니터에서 베이스 소리만 조금 줄여주세요")
-            if st.form_submit_button("요청 보내기",type="primary",width="stretch"):
-                send_request(store,token,body)
+        with st.expander('직접 요청 쓰기 · 버튼에 없는 요청'):
+            with st.form("sound_message",clear_on_submit=True):
+                body = st.text_input("직접 요청 쓰기",max_chars=300,placeholder="예: 키즈룸에 담당자 도움이 필요해요" if kids else "예: 제 모니터에서 베이스 소리만 조금 줄여주세요")
+                if st.form_submit_button("요청 보내기",type="primary",width="stretch"):
+                    send_request(store,token,body)
 
 
 def refresh_requests_button(key):
@@ -270,8 +272,20 @@ def desk_live(store,room_id,snapshot=None,checked_at=None):
     view=st.radio("대화 목록",["진행 대화","보관함"],horizontal=True,key="sound_thread_view")
     shown=[t for t in threads if bool(t["person"].get("desk_archived"))==(view=="보관함")]
     if not shown: st.info("보관한 대화가 없어요." if view=="보관함" else "진행 중인 대화가 없어요. 보관한 대화는 보관함에서 불러올 수 있어요.")
-    for thread in shown:
-        chat_thread(room,thread,desk=True,act=lambda action,message="",thread=thread: thread_action(store,room,thread,action,message))
+    if shown:
+        # Unanswered conversations first; selection stays stable during live updates.
+        shown.sort(key=lambda t:(not bool(t['waiting'] or t.get('new_message')), -t['last_activity']))
+        by_person = {t['person']['id']:t for t in shown}
+        selection_key = 'sound_selected_'+room_id+'_'+view
+        if st.session_state.get(selection_key) not in by_person:
+            st.session_state[selection_key] = next(iter(by_person))
+        def description(pid):
+            thread=by_person[pid]
+            status='새 메시지' if thread.get('new_message') else f"처리 대기 {thread['waiting']}건" if thread['waiting'] else '확인한 대화'
+            return f"{request_sender(thread['person'])} · {status}"
+        selected=st.selectbox('대화 선택 · 미처리 우선',list(by_person),format_func=description,key=selection_key)
+        thread=by_person[selected]
+        chat_thread(room,thread,desk=True,act=lambda action,message="": thread_action(store,room,thread,action,message))
 
 
 @st.cache_resource(show_spinner=False)
@@ -291,7 +305,9 @@ def live_panel(renderer, store, identity):
         st.warning("음향석 접근번호를 다시 입력해 주세요.")
         return
     now = time.time()
-    force = refresh_requests_button("sound_desk_refresh" if is_desk else "sound_mine_refresh")
+    with st.expander('연결·새로고침'):
+        force = refresh_requests_button("sound_desk_refresh" if is_desk else "sound_mine_refresh")
+        reconnect=st.button("실시간 수신 다시 연결",type="tertiary",key="sound_reconnect")
     force = state.pop("force", False) or force
     url, key = secret("AUDIO_SUPABASE_URL"), secret("AUDIO_SUPABASE_PUBLISHABLE_KEY")
     ready = False
@@ -303,7 +319,7 @@ def live_panel(renderer, store, identity):
             state.pop("setup_error", None)
         except AudioError as exc:
             state.update(setup_error=str(exc), setup_retry=now+30)
-    if st.button("실시간 수신 다시 연결",type="tertiary",key="sound_reconnect"):
+    if reconnect:
         st.session_state["sound_rt_restart"] = uuid.uuid4().hex
         st.session_state.pop("sound_rt_auth",None)
         state.update(setup_retry=0, stopped=False, transport="auth")
@@ -338,7 +354,7 @@ def live_panel(renderer, store, identity):
     elif state.get("stopped"):
         st.info("예배방 종료 · 자동 수신을 멈췄어요. 기록은 계속 볼 수 있습니다.")
     elif transport_healthy(state, now):
-        st.success("실시간 수신 정상 · 새 요청·답변을 자동 반영합니다.")
+        st.caption("실시간 수신 정상 · 새 요청·답변을 자동 반영합니다.")
     elif state.get("transport")=="paused":
         st.caption("화면 복귀 시 놓친 대화를 확인합니다.")
     else:
@@ -350,6 +366,33 @@ def live_panel(renderer, store, identity):
     with st.container(key="sound_live_region"):
         if snapshot is not None:
             renderer(store,identity,snapshot=snapshot,checked_at=state.get("checked_at"))
+
+
+def sound_entry_picker(identity):
+    """Remember the surface, never use it as authentication or room membership."""
+    if not st.session_state.get('sound_entry_choice_loaded') and isinstance(identity,dict):
+        st.session_state['sound_entry_choice_loaded']=True
+        if not st.session_state.get('sound_entry') and identity.get('entry') in {'kids','team','desk'}:
+            st.session_state['sound_entry']=identity['entry']
+    entry=st.session_state.get('sound_entry')
+    if entry in {'kids','team','desk','resume'}:
+        name={'kids':'키즈룸','team':'싱어·연주자','desk':'음향석','resume':'내 대화'}[entry]
+        with st.expander(name+' · 사용 화면 변경'):
+            st.caption('화면을 바꿔도 기존 대화는 삭제되지 않습니다. 음향석은 별도 인증이 필요합니다.')
+            if st.button('다른 사용 화면 선택',key='sound_change_entry',width='stretch'):
+                st.session_state['sound_entry']='choose'
+                st.rerun()
+        return entry
+    st.subheader('어디에서 사용하시나요?')
+    with st.container(key='sound_entry_cards'):
+        for value,label in [('team','싱어·연주자 · 내 모니터 소리 요청'),('kids','키즈룸 · 예배 소리 요청'),('desk','음향석 · 요청 확인·답변')]:
+            if st.button(label,key='sound_entry_'+value,width='stretch'):
+                st.session_state['sound_entry']=value
+                if value in {'kids','team'}:
+                    st.session_state['sound_join_location']='키즈룸' if value=='kids' else '싱어'
+                st.rerun()
+    st.caption('큐시트는 아래 메뉴에서 로그인 없이 볼 수 있어요.')
+    return None
 
 
 def audio_page():
@@ -373,8 +416,19 @@ def audio_page():
         background:#FFE4C9 !important;
     }
     </style>''')
-    st.title("예배 도움 요청")
-    st.caption("싱어·세션·키즈룸의 요청을 음향석에서 함께 확인해요.")
+    st.title("음향 요청")
+    st.html('''<style>
+    .st-key-sound_entry_cards button {min-height:82px!important;text-align:left!important}
+    .st-key-sound_entry_cards button p {font-size:20px!important;font-weight:750!important}
+    </style>''')
+    token=st.session_state.get('sound_person_token')
+    identity = _identity_component(token_to_save=token or '', entry_to_save=st.session_state.get('sound_entry',''),
+        clear_epoch=st.session_state.get('sound_clear_epoch',''),key='sound_browser_identity',default=None) if _identity_component else None
+    if not st.session_state.get('sound_entry') and (token or (isinstance(identity,dict) and identity.get('token'))):
+        st.session_state['sound_entry']='resume'
+    entry=sound_entry_picker(identity)
+    if not entry:
+        return
     url=secret("AUDIO_DATABASE_URL")
     if not url:
         st.info("음향 요청 기능을 준비 중이에요. 관리자가 전용 저장소를 연결하면 사용할 수 있어요.")
@@ -383,11 +437,11 @@ def audio_page():
         store=store_for(url)
     except AudioError as exc:
         flash_error(exc)
+        st.caption(f"실행 버전: {APP_VERSION} · 음향 저장소 초기 연결 실패")
+        st.info('오류 코드와 괄호 안 단계·진단을 함께 알려주세요. 비밀번호나 Secrets는 보내지 마세요. 파일을 업데이트했다면 전체 파일 업로드와 Streamlit Reboot 여부도 확인해 주세요.')
         return
-    mode=st.radio("사용 화면",["참여자","음향석"],horizontal=True)
-    if mode=="참여자":
+    if entry!='desk':
         token=st.session_state.get("sound_person_token")
-        identity = _identity_component(token_to_save=token or "", clear_epoch=st.session_state.get("sound_clear_epoch", ""), key="sound_browser_identity", default=None) if _identity_component else None
         if not token and isinstance(identity, dict) and identity.get("token") and not st.session_state.get("sound_skip_recovery"):
             saved = str(identity["token"])
             if 32 <= len(saved) <= 128:
@@ -407,7 +461,13 @@ def audio_page():
             room_labels = {r["id"]:r["label"] for r in available}
             if not available:
                 st.info("지금 열린 예배방이 없어요. 음향석에서 방을 만든 뒤 목록을 새로고침해 주세요.")
-            location = st.radio("내 구분",list(GROUPS),horizontal=True,key="sound_join_location")
+            if entry=='kids':
+                location='키즈룸'
+                st.caption('키즈룸으로 참여합니다. 예배방을 확인한 뒤 입장해 주세요.')
+            else:
+                if st.session_state.get('sound_join_location') not in {'싱어','세션'}:
+                    st.session_state['sound_join_location']='싱어'
+                location = st.radio("내 구분",['싱어','세션'],format_func=lambda v:'연주자' if v=='세션' else v,horizontal=True,key="sound_join_location")
             preset,custom = instrument_picker("sound_join") if location=="세션" else ("","")
             with st.form("sound_join"):
                 selected_room=st.selectbox("참여할 예배방",list(room_labels),format_func=room_labels.get,placeholder="예배방을 선택하세요",disabled=not available)
@@ -469,6 +529,15 @@ def audio_page():
                 st.session_state["sound_clear_epoch"] = uuid.uuid4().hex
                 st.session_state["sound_skip_recovery"] = True
                 st.rerun()
+        # A QR role hint must not silently replace an existing private identity.
+        try:
+            current_person=store.mine(token)[0]
+            if entry=='resume':
+                st.session_state['sound_entry']='kids' if current_person.get('location')=='키즈룸' else 'team'
+            elif (entry=='kids') != (current_person.get('location')=='키즈룸'):
+                st.info('저장된 기존 대화로 돌아왔어요. 구분을 바꾸려면 위 내 정보·복귀코드에서 변경하거나 다른 예배방을 선택하세요.')
+        except AudioError:
+            pass
         participant_controls(store,token)
         live_panel(participant_live,store,token)
         return
@@ -496,6 +565,7 @@ def audio_page():
             st.caption("입력 확인을 잠시 멈췄어요. 10분 뒤 다시 시도해 주세요.")
         return
     st.caption(f"음향석 · {st.session_state['sound_engineer_name']} · 접속 후 12시간 유지")
+    entry_links_panel()
     if st.button("음향석 로그아웃"):
         st.session_state["sound_engineer_until"]=0
         st.session_state["sound_monitor_enabled"]=False
