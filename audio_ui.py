@@ -383,15 +383,26 @@ def sound_entry_picker(identity):
                 st.session_state['sound_entry']='choose'
                 st.rerun()
         return entry
-    st.subheader('어디에서 사용하시나요?')
+    st.caption('예배에 집중할 수 있도록, 필요한 소리를 편하게 요청하세요.')
     with st.container(key='sound_entry_cards'):
-        for value,label in [('team','싱어·연주자 · 내 모니터 소리 요청'),('kids','키즈룸 · 예배 소리 요청'),('desk','음향석 · 요청 확인·답변')]:
-            if st.button(label,key='sound_entry_'+value,width='stretch'):
-                st.session_state['sound_entry']=value
-                if value in {'kids','team'}:
-                    st.session_state['sound_join_location']='키즈룸' if value=='kids' else '싱어'
+        columns=st.columns(2)
+        for column,value,label,description in [
+            (columns[0],'team','싱어·연주자','내 목소리와 악기, 모니터 음량을 요청해요.'),
+            (columns[1],'kids','키즈룸','예배 소리를 조절하고 음향석과 대화해요.')]:
+            with column:
+                with st.container(border=True,key='sound_card_'+value):
+                    st.caption('찬양팀' if value=='team' else '예배 공간')
+                    if st.button(label,key='sound_entry_'+value,width='stretch'):
+                        st.session_state['sound_entry']=value
+                        st.session_state['sound_join_location']='키즈룸' if value=='kids' else '싱어'
+                        st.rerun()
+                    st.write(description)
+        with st.container(key='sound_staff_entry'):
+            st.caption('음향 담당자이신가요?')
+            if st.button('음향석으로 들어가기 →',key='sound_entry_desk',type='tertiary'):
+                st.session_state['sound_entry']='desk'
                 st.rerun()
-    st.caption('큐시트는 아래 메뉴에서 로그인 없이 볼 수 있어요.')
+    st.caption('찬양·본문·예배 순서는 큐시트에서 확인하세요.')
     return None
 
 
@@ -418,8 +429,22 @@ def audio_page():
     </style>''')
     st.title("음향 요청")
     st.html('''<style>
-    .st-key-sound_entry_cards button {min-height:82px!important;text-align:left!important}
-    .st-key-sound_entry_cards button p {font-size:20px!important;font-weight:750!important}
+    .st-key-sound_entry_cards {max-width:760px;margin-top:12px}
+    .st-key-sound_card_team,.st-key-sound_card_kids {background:white;border:1px solid #e7e4df!important;border-radius:22px!important;padding:24px!important;box-shadow:0 4px 18px #34271904}
+    .st-key-sound_card_team {border-top:3px solid #d5a06c!important}
+    .st-key-sound_card_kids {border-top:3px solid #94aaa0!important}
+    .st-key-sound_entry_cards button {min-height:52px!important;text-align:left!important;justify-content:flex-start!important;background:#faf8f5!important;border:0!important;border-radius:12px!important;box-shadow:none!important;color:#25313c!important}
+    .st-key-sound_entry_cards button p {font-size:20px!important;font-weight:700!important;color:inherit!important;-webkit-text-fill-color:inherit!important}
+    .st-key-sound_entry_cards [data-testid="stMarkdownContainer"] p {font-size:15px;line-height:1.65;color:#66717b}
+    .st-key-sound_entry_cards button:hover {background:#fff0df!important}
+    .st-key-sound_staff_entry {margin-top:12px;padding:16px 4px!important;border-top:1px solid #e7e4df}
+    .st-key-sound_staff_entry button {background:transparent!important;min-height:44px!important}
+    .st-key-sound_staff_entry button p {font-size:15px!important;font-weight:600!important}
+    @media(max-width:600px) {
+      .st-key-sound_entry_cards [data-testid="stHorizontalBlock"] {flex-wrap:wrap!important}
+      .st-key-sound_entry_cards [data-testid="stColumn"] {min-width:100%!important;flex:1 1 100%!important}
+      .st-key-sound_card_team,.st-key-sound_card_kids {padding:18px!important}
+    }
     </style>''')
     token=st.session_state.get('sound_person_token')
     identity = _identity_component(token_to_save=token or '', entry_to_save=st.session_state.get('sound_entry',''),

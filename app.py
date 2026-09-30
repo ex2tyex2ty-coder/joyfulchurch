@@ -32,7 +32,6 @@ from config import (
     SOURCE_DIR,
     ensure_directories,
 )
-from calendar_sync import sync_google_calendar_service_account
 from bible_lookup import (
     BibleReference,
     BibleVerse,
@@ -552,16 +551,6 @@ def refresh_readonly_sources_if_due() -> None:
         except Exception:
             # Existing data remains visible. The admin sync panel reports details.
             pass
-    calendar_id = text_secret("GOOGLE_CALENDAR_ID")
-    if calendar_id and due(get_app_meta("auto_calendar_success", ""), get_app_meta("auto_calendar_attempt", "")):
-        info, _ = service_account_secret("GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT")
-        if info:
-            set_app_meta("auto_calendar_attempt", str(time.time()))
-            try:
-                sync_google_calendar_service_account(calendar_id, info)
-                set_app_meta("auto_calendar_success", datetime.now().astimezone().isoformat())
-            except Exception:
-                pass
 
 
 def rerun(message: str | None = None) -> None:
@@ -1727,12 +1716,6 @@ def dashboard_page() -> None:
     needs_review = (row("SELECT COUNT(*) AS count FROM unresolved_imports WHERE status='OPEN' AND quality='Needs Review'") or {}).get("count", 0)
     sunday_date = next_weekday(today_date, 6)
     friday_date = next_weekday(today_date, 4)
-    active_calendar_id = get_app_meta("last_google_calendar_id", "")
-    calendar_items = rows(
-        "SELECT * FROM church_calendar_events WHERE archived_at IS NULL AND status<>'CANCELLED' AND start_date>=? "
-        "AND (?='' OR calendar_id=?) ORDER BY start_date,id LIMIT 6",
-        (today, active_calendar_id, active_calendar_id),
-    )
 
     st.markdown('<div class="ops-section-title">다음 정기예배</div>', unsafe_allow_html=True)
     worship_cards = [
@@ -1823,26 +1806,6 @@ def dashboard_page() -> None:
                     navigate(target_page)
 
     section_gap()
-    st.markdown('<div class="ops-section-title">다가오는 일정</div>', unsafe_allow_html=True)
-    if calendar_items:
-        calendar_html = '<div class="ops-list">' + "".join(
-            '<div class="ops-list-item">'
-            f'<div class="meta">{html.escape(str(item["start_date"]))} · {html.escape(dday(item["start_date"]))}</div>'
-            f'<div class="title">{html.escape(str(item["title"]))}</div>'
-            + (f'<div class="note">{html.escape(str(item["location"]))}</div>' if item["location"] else "")
-            + "</div>"
-            for item in calendar_items[:3]
-        ) + "</div>"
-        st.markdown(calendar_html, unsafe_allow_html=True)
-        if st.button("교회력 전체 보기", key="dashboard_open_calendar", type="tertiary", width="stretch"):
-            navigate("교회력")
-    else:
-        st.markdown(
-            '<div class="ops-empty">Google Calendar를 연결하면 가까운 교회력 일정부터 여기에 보여요.</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("캘린더 연결", key="dashboard_connect_calendar", type="tertiary", width="stretch"):
-            navigate("교회력")
 
     st.markdown("##### 특별행사")
     if not upcoming:
@@ -3158,100 +3121,6 @@ def archive_page() -> None:
                 rerun("매뉴얼을 복원했습니다.")
 
 
-def calendar_page() -> None:
-    hero("교회력", "Google Calendar 일정을 읽기 전용으로 가져와 함께 확인해요.")
-    today = today_kst().isoformat()
-    active_calendar_id = get_app_meta("last_google_calendar_id", "") or get_app_meta("google_calendar_id", "")
-    upcoming = rows(
-        "SELECT * FROM church_calendar_events WHERE archived_at IS NULL AND status<>'CANCELLED' AND start_date>=? "
-        "AND (?='' OR calendar_id=?) ORDER BY start_date,id LIMIT 30",
-        (today, active_calendar_id, active_calendar_id),
-    )
-    sync_status = row(
-        "SELECT COUNT(*) AS total FROM church_calendar_events WHERE archived_at IS NULL AND (?='' OR calendar_id=?)",
-        (active_calendar_id, active_calendar_id),
-    ) or {"total": 0}
-    last_calendar_sync = get_app_meta("last_google_calendar_sync_at", "")
-    last_sync_label = (last_calendar_sync or "연동 전").replace("T", " ")
-    if last_sync_label != "연동 전" and len(last_sync_label) >= 16:
-        last_sync_label = last_sync_label[5:16]
-    compact_stats([
-        ("다가오는 일정", f"{len(upcoming)}건"),
-        ("저장된 일정", f"{sync_status['total']}건"),
-        ("마지막 동기화", last_sync_label),
-    ], columns=3)
-
-    st.subheader("다가오는 일정")
-    if upcoming:
-        calendar_limit = st.selectbox("한 번에 보기", [10, 20, 30], key="calendar_display_limit")
-        st.caption(f"다가오는 일정 {len(upcoming)}건 · 현재 {min(len(upcoming), calendar_limit)}건 표시")
-        for item in upcoming[:calendar_limit]:
-            with st.container(border=True):
-                st.markdown(
-                    f"{badge(dday(item['start_date']), 'warn')} {badge(item['start_date'], 'gray')}  "
-                    f"**{html.escape(str(item['title']))}**",
-                    unsafe_allow_html=True,
-                )
-                if item["location"]:
-                    st.caption(f"장소 · {item['location']}")
-                if item["description"]:
-                    st.caption(search_excerpt(item["description"], "", 180))
-                if item["html_link"]:
-                    safe_calendar_url = _safe_http_url(item["html_link"])
-                    if safe_calendar_url:
-                        st.link_button("Google Calendar에서 보기", safe_calendar_url, width="stretch")
-    else:
-        empty_state("Google Calendar를 연결하면 가까운 교회력 일정부터 여기에 보여요.")
-
-    if not has_access("ADMIN"):
-        st.caption("Google Calendar 연결과 동기화는 관리자 권한에서만 표시됩니다.")
-        return
-
-    with st.expander("Google Calendar 연결 설정", expanded=False):
-        calendar_credentials, calendar_secret_error = service_account_secret("GOOGLE_REVIEW_BOARD_SERVICE_ACCOUNT")
-        try:
-            secret_calendar_id = str(st.secrets["GOOGLE_CALENDAR_ID"]).strip()
-        except (FileNotFoundError, KeyError):
-            secret_calendar_id = ""
-        current_calendar_id = secret_calendar_id or get_app_meta("google_calendar_id", "")
-        service_email = str((calendar_credentials or {}).get("client_email") or "")
-        st.markdown(
-            "**Streamlit Cloud 권장 방식**  \n"
-            "Google Calendar 설정에서 아래 서비스 계정을 `모든 일정 세부정보 보기`로 공유하세요. "
-            "앱은 일정 **읽기 전용** 권한만 사용합니다."
-        )
-        if service_email:
-            st.code(service_email, language=None)
-        else:
-            st.warning("게시판 서비스 계정 Secret을 찾지 못했어요.")
-            st.caption(calendar_secret_error)
-        calendar_id = st.text_input(
-            "Calendar ID",
-            value=current_calendar_id,
-            placeholder="예: church-calendar@group.calendar.google.com",
-            disabled=bool(secret_calendar_id),
-            help="Google Calendar 설정 → 캘린더 통합 → Calendar ID에서 확인합니다.",
-        )
-        save_col, sync_col = st.columns(2)
-        if save_col.button("연동 설정 저장", width="stretch"):
-            if not calendar_id.strip():
-                st.error("Calendar ID를 입력하세요.")
-            else:
-                if not secret_calendar_id:
-                    set_app_meta("google_calendar_id", calendar_id.strip())
-                rerun("Google Calendar 연동 설정을 저장했습니다.")
-        if sync_col.button("Google Calendar 읽기·동기화", type="primary", width="stretch", disabled=calendar_credentials is None):
-            if not calendar_id.strip():
-                st.error("Calendar ID를 입력하고 설정을 저장하세요.")
-            else:
-                try:
-                    set_app_meta("google_calendar_id", calendar_id.strip())
-                    with st.spinner("교회력 일정을 읽기 전용으로 동기화하는 중입니다…"):
-                        result = sync_google_calendar_service_account(calendar_id.strip(), calendar_credentials)
-                    rerun(f"{result['calendar']}에서 교회력 일정 {result['saved']}건을 동기화했습니다.")
-                except Exception as exc:
-                    st.error(f"동기화하지 못했어요: {exc}")
-        st.caption("Calendar ID를 Streamlit Secret `GOOGLE_CALENDAR_ID`로 저장하면 재부팅 후에도 설정이 유지됩니다.")
 
 
 def data_page() -> None:
@@ -3368,7 +3237,7 @@ def full_menu():
         groups = [
             ("누구나 보기", [("큐시트", "찬양·본문·예배 순서"), ("주보", "교회 주보 · 준비 중"), ("성경 검색", "말씀 찾아보기"), ("대시보드", "운영 현황·일정")]),
             ("예배 참여·담당자", [("음향 요청", "음향 담당자에게 요청"), ("예배 진행", "담당자 로그인 · 공동 진행"), ("예배 인원 현황", "출석 인원 확인"), ("팀 확인", "팀 준비 사항")]),
-            ("자료·관리", [("행사", "교회 행사"), ("교회력", "예배 일정"), ("매뉴얼", "운영 안내"), ("전체 검색", "자료 찾기"), ("보관함", "보관 자료"), ("데이터·백업", "데이터 관리")]),
+            ("자료·관리", [("행사", "교회 행사"), ("매뉴얼", "운영 안내"), ("전체 검색", "자료 찾기"), ("보관함", "보관 자료"), ("데이터·백업", "데이터 관리")]),
         ]
         if has_access("TEAM"):
             groups[-1][1].append(("결정·운영로그", "운영 기록"))
@@ -3418,7 +3287,6 @@ def main() -> None:
         "팀 확인": review_board_page,
         "음향 요청": audio_page,
         "예배 진행": cue_page,
-        "교회력": calendar_page,
         "행사": events_page,
         "매뉴얼": manuals_page,
         "결정·운영로그": logs_page,
